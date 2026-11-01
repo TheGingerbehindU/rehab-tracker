@@ -13,8 +13,23 @@ export const RESPONSE_TYPES = [
   'Significant flare',
 ] as const
 
+export const EVENT_CONTEXTS = [
+  'Sitting',
+  'Standing',
+  'Walking',
+  'Driving / travel',
+  'Resting',
+  'After training',
+  'Other',
+] as const
+
+export const EVENT_CHANGES = ['Worse', 'Better', 'No clear change'] as const
+
 export type SessionType = (typeof SESSION_TYPES)[number]
 export type Response24h = (typeof RESPONSE_TYPES)[number]
+export type EntryType = 'session' | 'symptom_event'
+export type EventContext = (typeof EVENT_CONTEXTS)[number]
+export type EventChange = (typeof EVENT_CHANGES)[number]
 export type SyncStatus = 'pending' | 'synced' | 'conflict' | 'error'
 
 export type RehabDay = {
@@ -22,6 +37,9 @@ export type RehabDay = {
   date: string
   sessionAt: string
   followUpDueAt: string
+  entryType: EntryType
+  eventContext: EventContext | null
+  eventChange: EventChange | null
   sessionType: SessionType
   sessionContent: string
   durationMinutes: number | null
@@ -57,7 +75,7 @@ export type AppSetting = {
 }
 
 export type BackupFile = {
-  schemaVersion: 2
+  schemaVersion: 3
   exportedAt: string
   app: 'Rehab Tracker'
   records: RehabDay[]

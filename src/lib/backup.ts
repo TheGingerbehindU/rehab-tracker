@@ -3,7 +3,7 @@ import { followUpTimestamp, sessionTimestamp } from './dates'
 
 export function createBackup(records: RehabDay[]): BackupFile {
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     exportedAt: new Date().toISOString(),
     app: 'Rehab Tracker',
     records,
@@ -13,19 +13,29 @@ export function createBackup(records: RehabDay[]): BackupFile {
 export function parseBackup(value: unknown): BackupFile {
   if (!value || typeof value !== 'object') throw new Error('This is not a Rehab Tracker backup.')
   const candidate = value as Partial<BackupFile> & { schemaVersion?: number; records?: Array<Partial<RehabDay>> }
-  if (![1, 2].includes(candidate.schemaVersion ?? 0) || !Array.isArray(candidate.records)) {
+  if (![1, 2, 3].includes(candidate.schemaVersion ?? 0) || !Array.isArray(candidate.records)) {
     throw new Error('This backup version is not supported.')
   }
   const records = candidate.records.map((record) => {
     const sessionAt = record.sessionAt || sessionTimestamp(record.date || '1970-01-01', '12:00')
-    return { ...record, sessionAt, followUpDueAt: record.followUpDueAt || followUpTimestamp(sessionAt) } as RehabDay
+    return {
+      ...record,
+      sessionAt,
+      followUpDueAt: record.followUpDueAt || followUpTimestamp(sessionAt),
+      entryType: record.entryType || 'session',
+      eventContext: record.eventContext || null,
+      eventChange: record.eventChange || null,
+    } as RehabDay
   })
-  return { ...candidate, schemaVersion: 2, records } as BackupFile
+  return { ...candidate, schemaVersion: 3, records } as BackupFile
 }
 
 const CSV_FIELDS: Array<[string, keyof RehabDay]> = [
+  ['Entry type', 'entryType'],
   ['Date', 'date'],
   ['Session time', 'sessionAt'],
+  ['Event context', 'eventContext'],
+  ['Symptom change', 'eventChange'],
   ['Day / activity type', 'sessionType'],
   ['Session content (exercises, sets, reps, loads)', 'sessionContent'],
   ['Duration (min)', 'durationMinutes'],

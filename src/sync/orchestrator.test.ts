@@ -34,7 +34,7 @@ describe('sync orchestrator', () => {
     const result = await syncPending(database, new TestProvider())
 
     expect(result.synced).toBe(1)
-    expect(await database.outbox.count()).toBe(0)
+    expect(await database.syncOutbox.count()).toBe(0)
     expect((await database.days.get(saved.id))?.syncStatus).toBe('synced')
   })
 
@@ -51,7 +51,7 @@ describe('sync orchestrator', () => {
     const result = await syncPending(database, provider)
 
     expect(result.conflicts).toBe(1)
-    expect(await database.outbox.count()).toBe(1)
+    expect(await database.syncOutbox.count()).toBe(1)
     expect((await database.days.get(saved.id))?.syncStatus).toBe('conflict')
   })
 })

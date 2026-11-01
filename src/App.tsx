@@ -12,6 +12,7 @@ import {
   FileJson,
   Home,
   LineChart,
+  MessageSquareWarning,
   Plus,
   Settings,
   ShieldCheck,
@@ -24,11 +25,11 @@ import { createBackup, downloadFile, parseBackup, recordsToCsv } from './lib/bac
 import { displayDate, displayMonth, displayTime, monthDays, monthKey, shiftMonth, todayInBerlin } from './lib/dates'
 import { dayTone, hasSession, symptomDelta, toneLabel } from './lib/derived'
 import { isDateOnly } from './lib/dates'
-import type { RehabDay } from './types'
+import type { EntryType, RehabDay } from './types'
 import './index.css'
 
 type View = 'home' | 'calendar' | 'progress' | 'settings'
-type EditorState = { date: string; recordId?: string; followUp?: boolean; overview?: boolean } | null
+type EditorState = { date: string; recordId?: string; entryType?: EntryType; followUp?: boolean; overview?: boolean } | null
 
 const NAV_ITEMS: Array<{ id: View; label: string; icon: typeof Home }> = [
   { id: 'home', label: 'Today', icon: Home },
@@ -42,31 +43,34 @@ function StatusPill({ day }: { day: RehabDay }) {
   return <span className={`status-pill tone-${tone}`}>{toneLabel(tone)}</span>
 }
 
-const TONE_PRIORITY = { rest: 0, logged: 1, favorable: 2, pending: 3, mild: 4, major: 5 } as const
+const TONE_PRIORITY = { rest: 0, logged: 1, event: 2, favorable: 3, pending: 4, mild: 5, major: 6 } as const
 
 function strongestDay(days: RehabDay[]): RehabDay | undefined {
   return [...days].sort((a, b) => TONE_PRIORITY[dayTone(b)] - TONE_PRIORITY[dayTone(a)])[0]
 }
 
 function DayOverview({ date, days, openEditor, onBack }: { date: string; days: RehabDay[]; openEditor: (state: EditorState) => void; onBack: () => void }) {
-  const sessions = days.filter((day) => day.date === date).sort((a, b) => a.sessionAt.localeCompare(b.sessionAt))
+  const entries = days.filter((day) => day.date === date).sort((a, b) => a.sessionAt.localeCompare(b.sessionAt))
   return (
     <main className="page-shell day-overview-page">
       <header className="editor-header">
         <button className="icon-button" type="button" onClick={onBack} aria-label="Back"><ChevronLeft aria-hidden="true" /></button>
         <div><p className="context-label">{displayDate(date, { weekday: 'long' })}</p><h1>{displayDate(date)}</h1></div>
-        <button className="primary-button" type="button" onClick={() => openEditor({ date })}><Plus aria-hidden="true" /> Add session</button>
+        <div className="overview-actions">
+          <button className="primary-button" type="button" onClick={() => openEditor({ date, entryType: 'session' })}><Plus aria-hidden="true" /> Add session</button>
+          <button className="secondary-button" type="button" onClick={() => openEditor({ date, entryType: 'symptom_event' })}><MessageSquareWarning aria-hidden="true" /> Symptom event</button>
+        </div>
       </header>
-      <section className="day-session-list" aria-label={`Sessions on ${displayDate(date)}`}>
-        {sessions.length ? sessions.map((session, index) => (
-          <article className="day-session-row" key={session.id}>
-            <span className="session-time"><Clock3 aria-hidden="true" />{displayTime(session.sessionAt)}</span>
-            <div><strong>{session.sessionType}</strong><p>{session.sessionContent || `Session ${index + 1}`}</p></div>
-            <StatusPill day={session} />
-            <button className="secondary-button" type="button" onClick={() => openEditor({ date, recordId: session.id })}>Open</button>
+      <section className="day-session-list" aria-label={`Timeline for ${displayDate(date)}`}>
+        {entries.length ? entries.map((entry, index) => (
+          <article className={`day-session-row ${entry.entryType === 'symptom_event' ? 'is-event' : ''}`} key={entry.id}>
+            <span className="session-time"><Clock3 aria-hidden="true" />{displayTime(entry.sessionAt)}</span>
+            <div><strong>{entry.entryType === 'symptom_event' ? entry.eventContext || 'Symptom event' : entry.sessionType}</strong><p>{entry.sessionContent || `${entry.entryType === 'symptom_event' ? 'Symptom event' : 'Session'} ${index + 1}`}</p></div>
+            <StatusPill day={entry} />
+            <button className="secondary-button" type="button" onClick={() => openEditor({ date, recordId: entry.id, entryType: entry.entryType })}>Open</button>
           </article>
         )) : (
-          <div className="empty-state"><CalendarDays aria-hidden="true" /><h2>No sessions on this date</h2><p>Add the first session; each additional session will keep its own measurements and follow-up.</p><button className="primary-button" type="button" onClick={() => openEditor({ date })}><Plus aria-hidden="true" /> Add session</button></div>
+          <div className="empty-state"><CalendarDays aria-hidden="true" /><h2>No entries on this date</h2><p>Add a training session or record a situation that changed your symptoms.</p><div className="empty-actions"><button className="primary-button" type="button" onClick={() => openEditor({ date, entryType: 'session' })}><Plus aria-hidden="true" /> Add session</button><button className="secondary-button" type="button" onClick={() => openEditor({ date, entryType: 'symptom_event' })}><MessageSquareWarning aria-hidden="true" /> Symptom event</button></div></div>
         )}
       </section>
     </main>
@@ -96,12 +100,14 @@ function HomeView({ days, openEditor }: { days: RehabDay[]; openEditor: (state: 
     return () => window.clearInterval(timer)
   }, [])
   const todayEntries = days.filter((day) => day.date === today).sort((a, b) => a.sessionAt.localeCompare(b.sessionAt))
+  const todaySessions = todayEntries.filter(hasSession)
+  const todayEvents = todayEntries.filter((day) => day.entryType === 'symptom_event')
   const todayTone = strongestDay(todayEntries)
   const pendingFollowUps = days
     .filter((day) => hasSession(day) && !day.followUpComplete && new Date(day.followUpDueAt).getTime() <= currentTime)
     .sort((a, b) => a.followUpDueAt.localeCompare(b.followUpDueAt))
   const recent = [...days].filter((day) => day.date < today).sort((a, b) => b.sessionAt.localeCompare(a.sessionAt)).slice(0, 5)
-  const totalDuration = todayEntries.reduce((sum, entry) => sum + (entry.durationMinutes ?? 0), 0)
+  const totalDuration = todaySessions.reduce((sum, entry) => sum + (entry.durationMinutes ?? 0), 0)
 
   return (
     <main className="page-shell home-page" id="top">
@@ -113,36 +119,41 @@ function HomeView({ days, openEditor }: { days: RehabDay[]; openEditor: (state: 
         </div>
         <div className="today-copy">
           <p className="context-label">Today</p>
-          <h1>{todayEntries.length ? `${todayEntries.length} ${todayEntries.length === 1 ? 'session' : 'sessions'} logged today.` : 'How did training feel?'}</h1>
-          <p>{todayEntries.length ? 'Keep separate measurements for every training or rehab block.' : 'Capture this session now. Its own 24-hour check-in will appear when due.'}</p>
+          <h1>{todayEntries.length ? `${todayEntries.length} ${todayEntries.length === 1 ? 'entry' : 'entries'} in today’s timeline.` : 'What has your body experienced today?'}</h1>
+          <p>{todayEntries.length ? 'Add training and everyday symptom changes as they happen.' : 'Log a session, or capture an ordinary situation that changed your symptoms.'}</p>
           <div className="hero-actions">
-            <button className="primary-button large" type="button" onClick={() => openEditor(todayEntries.length ? { date: today, overview: true } : { date: today })}>
-              {todayEntries.length ? 'View today' : 'Log a session'} <ArrowRight aria-hidden="true" />
-            </button>
-            {todayEntries.length > 0 && <button className="secondary-button large" type="button" onClick={() => openEditor({ date: today })}><Plus aria-hidden="true" /> Add session</button>}
+            <button className="primary-button large" type="button" onClick={() => openEditor({ date: today, entryType: 'session' })}><Plus aria-hidden="true" /> Log a session</button>
+            <button className="secondary-button large event-button" type="button" onClick={() => openEditor({ date: today, entryType: 'symptom_event' })}><MessageSquareWarning aria-hidden="true" /> Log symptom event</button>
+            {todayEntries.length > 0 && <button className="text-button view-timeline" type="button" onClick={() => openEditor({ date: today, overview: true })}>View today’s timeline <ArrowRight aria-hidden="true" /></button>}
           </div>
         </div>
-        {todayTone && <div className="today-summary"><StatusPill day={todayTone} /><dl><div><dt>Sessions</dt><dd>{todayEntries.length}</dd></div><div><dt>Total</dt><dd>{totalDuration || '—'}{totalDuration > 0 && ' min'}</dd></div></dl></div>}
+        {todayTone && <div className="today-summary"><StatusPill day={todayTone} /><dl><div><dt>Sessions</dt><dd>{todaySessions.length}</dd></div><div><dt>Symptom events</dt><dd>{todayEvents.length}</dd></div><div><dt>Training time</dt><dd>{totalDuration || '—'}{totalDuration > 0 && ' min'}</dd></div></dl></div>}
       </section>
 
       {pendingFollowUps.length > 0 && (
-        <section className="follow-up-card">
-          <div className="follow-up-icon"><span>24h</span></div>
-          <div><p className="context-label">{pendingFollowUps.length === 1 ? 'Follow-up due' : `${pendingFollowUps.length} follow-ups due`}</p><h2>{pendingFollowUps[0].sessionType} · {displayDate(pendingFollowUps[0].date)} at {displayTime(pendingFollowUps[0].sessionAt)}</h2><p>Record the response for this session. A later check-in is still useful.</p></div>
-          <button className="secondary-button" type="button" onClick={() => openEditor({ date: pendingFollowUps[0].date, recordId: pendingFollowUps[0].id, followUp: true })}>Check in <ArrowRight size={18} aria-hidden="true" /></button>
+        <section className="follow-up-card" aria-label="Due follow-ups">
+          <div className="follow-up-heading"><div className="follow-up-icon"><span>24h</span></div><div><p className="context-label">{pendingFollowUps.length === 1 ? 'Follow-up due now' : `${pendingFollowUps.length} follow-ups due now`}</p><h2>Check how each session settled.</h2></div></div>
+          <div className="follow-up-list">
+            {pendingFollowUps.map((followUp) => (
+              <div className="follow-up-row" key={followUp.id}>
+                <div><strong>{followUp.sessionType}</strong><span>{displayDate(followUp.date)} at {displayTime(followUp.sessionAt)}</span></div>
+                <button className="secondary-button" type="button" onClick={() => openEditor({ date: followUp.date, recordId: followUp.id, entryType: 'session', followUp: true })}>Check in <ArrowRight size={18} aria-hidden="true" /></button>
+              </div>
+            ))}
+          </div>
         </section>
       )}
 
       <section className="section-block recent-block">
-        <div className="block-title"><div><p className="context-label">Recent entries</p><h2>Your training notebook</h2></div></div>
+        <div className="block-title"><div><p className="context-label">Recent entries</p><h2>Your body timeline</h2></div></div>
         {recent.length === 0 ? (
-          <div className="empty-state"><CalendarDays aria-hidden="true" /><h3>No earlier entries yet</h3><p>Your previous sessions and follow-ups will collect here.</p></div>
+          <div className="empty-state"><CalendarDays aria-hidden="true" /><h3>No earlier entries yet</h3><p>Your previous sessions, symptom events and follow-ups will collect here.</p></div>
         ) : (
           <div className="recent-list">
             {recent.map((day) => (
               <button key={day.id} type="button" className="recent-row" onClick={() => openEditor({ date: day.date, recordId: day.id })}>
                 <span className="date-tile"><strong>{day.date.slice(-2)}</strong><small>{displayDate(day.date, { month: 'short' })}</small></span>
-                <span className="recent-detail"><strong>{day.sessionType} · {displayTime(day.sessionAt)}</strong><small>{day.sessionContent || 'No session details added'}</small></span>
+                <span className="recent-detail"><strong>{day.entryType === 'symptom_event' ? day.eventContext || 'Symptom event' : day.sessionType} · {displayTime(day.sessionAt)}</strong><small>{day.sessionContent || (day.entryType === 'symptom_event' ? 'No event details added' : 'No session details added')}</small></span>
                 <StatusPill day={day} />
                 <ChevronRight aria-hidden="true" />
               </button>
@@ -168,7 +179,7 @@ function CalendarView({ days, openEditor }: { days: RehabDay[]; openEditor: (sta
 
   return (
     <main className="page-shell calendar-page">
-      <div className="page-title-row"><div><p className="context-label">Calendar</p><h1>See the pattern, session by session.</h1><p>Each day can hold several sessions with separate response measurements.</p></div><button className="primary-button" type="button" onClick={() => openEditor({ date: today })}><Plus aria-hidden="true" /> Add session</button></div>
+      <div className="page-title-row"><div><p className="context-label">Calendar</p><h1>See the pattern, entry by entry.</h1><p>Each day can hold several sessions and symptom events in one timeline.</p></div><button className="primary-button" type="button" onClick={() => openEditor({ date: today, entryType: 'session' })}><Plus aria-hidden="true" /> Add session</button></div>
       <section className="calendar-panel">
         <header className="calendar-toolbar">
           <button className="icon-button" type="button" onClick={() => setMonth(shiftMonth(month, -1))} aria-label="Previous month"><ChevronLeft /></button>
@@ -183,15 +194,15 @@ function CalendarView({ days, openEditor }: { days: RehabDay[]; openEditor: (sta
             const representative = strongestDay(entries)
             const tone = representative ? dayTone(representative) : undefined
             return (
-              <button type="button" key={date} className={`calendar-cell ${date === today ? 'is-today' : ''} ${entries.length ? 'has-entry' : ''}`} onClick={() => openEditor({ date, overview: true })} aria-label={`${displayDate(date)}${entries.length ? `, ${entries.length} sessions, ${toneLabel(tone!)}` : ', no sessions'}`}>
+              <button type="button" key={date} className={`calendar-cell ${date === today ? 'is-today' : ''} ${entries.length ? 'has-entry' : ''}`} onClick={() => openEditor({ date, overview: true })} aria-label={`${displayDate(date)}${entries.length ? `, ${entries.length} entries, ${toneLabel(tone!)}` : ', no entries'}`}>
                 <span className="day-number">{Number(date.slice(-2))}</span>
-                {tone && <span className={`day-marker tone-${tone}`}><span />{entries.length > 1 ? `${entries.length} sessions` : toneLabel(tone)}</span>}
+                {tone && <span className={`day-marker tone-${tone}`}><span />{entries.length > 1 ? `${entries.length} entries` : toneLabel(tone)}</span>}
               </button>
             )
           })}
         </div>
         <footer className="calendar-legend">
-          {(['rest', 'pending', 'favorable', 'mild', 'major'] as const).map((tone) => <span key={tone}><i className={`tone-${tone}`} />{toneLabel(tone)}</span>)}
+          {(['rest', 'event', 'pending', 'favorable', 'mild', 'major'] as const).map((tone) => <span key={tone}><i className={`tone-${tone}`} />{toneLabel(tone)}</span>)}
         </footer>
       </section>
     </main>
@@ -199,8 +210,9 @@ function CalendarView({ days, openEditor }: { days: RehabDay[]; openEditor: (sta
 }
 
 function ProgressView({ days }: { days: RehabDay[] }) {
-  const completed = [...days].filter((day) => day.symptomsBefore !== null && day.symptoms24h !== null).sort((a, b) => a.date.localeCompare(b.date)).slice(-10)
+  const completed = [...days].filter((day) => hasSession(day) && day.symptomsBefore !== null && day.symptoms24h !== null).sort((a, b) => a.date.localeCompare(b.date)).slice(-10)
   const sessions = days.filter(hasSession)
+  const symptomEvents = days.filter((day) => day.entryType === 'symptom_event')
   const duration = sessions.reduce((sum, day) => sum + (day.durationMinutes ?? 0), 0)
   const deltas = completed.map(symptomDelta).filter((value): value is number => value !== null)
   const averageDelta = deltas.length ? deltas.reduce((sum, value) => sum + value, 0) / deltas.length : null
@@ -218,6 +230,7 @@ function ProgressView({ days }: { days: RehabDay[] }) {
       <div className="page-title-row"><div><p className="context-label">Progress</p><h1>Look for useful context, not a score.</h1><p>These summaries reflect your subjective entries and do not diagnose an injury.</p></div></div>
       <div className="metric-cards">
         <article><span>Logged sessions</span><strong>{sessions.length}</strong><small>across {new Set(sessions.map((day) => day.date.slice(0, 7))).size || 0} months</small></article>
+        <article><span>Symptom events</span><strong>{symptomEvents.length}</strong><small>{symptomEvents.filter((day) => day.eventChange === 'Worse').length} recorded as worse</small></article>
         <article><span>Total duration</span><strong>{duration}</strong><small>recorded minutes</small></article>
         <article><span>Average 24h change</span><strong>{averageDelta === null ? '—' : `${averageDelta > 0 ? '+' : ''}${averageDelta.toFixed(1)}`}</strong><small>{deltas.length ? `from ${deltas.length} complete pairs` : 'needs complete follow-ups'}</small></article>
         <article><span>Recorded flares</span><strong>{followUps ? `${Math.round((flares / followUps) * 100)}%` : '—'}</strong><small>{flares} of {followUps} follow-ups</small></article>
@@ -286,14 +299,14 @@ function App() {
   const [view, setView] = useState<View>('home')
   const [editor, setEditor] = useState<EditorState>(null)
   const days = useLiveQuery(() => db.days.toArray(), []) ?? []
-  const pending = useLiveQuery(() => db.outbox.count(), []) ?? 0
+  const pending = useLiveQuery(() => db.syncOutbox.count(), []) ?? 0
 
   if (editor?.overview) {
     return <DayOverview date={editor.date} days={days} openEditor={setEditor} onBack={() => setEditor(null)} />
   }
 
   if (editor) {
-    return <DayEditor date={editor.date} recordId={editor.recordId} focusFollowUp={editor.followUp} onBack={() => setEditor(editor.recordId ? { date: editor.date, overview: true } : null)} onDateChanged={(date) => setEditor((current) => current ? { ...current, date } : null)} />
+    return <DayEditor date={editor.date} recordId={editor.recordId} entryType={editor.entryType} focusFollowUp={editor.followUp} onBack={() => setEditor(editor.recordId ? { date: editor.date, overview: true } : null)} onSaved={(record) => setEditor((current) => current ? { ...current, date: record.date, recordId: record.id, entryType: record.entryType } : null)} />
   }
 
   return (

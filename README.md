@@ -1,12 +1,14 @@
 # Rehab Tracker
 
-A private, offline-first Progressive Web App for recording rehabilitation and training sessions, immediate symptoms, and the later response. The prototype works fully offline and includes an optional per-file Google Sheets synchronization path.
+A private, offline-first Progressive Web App for recording rehabilitation and training sessions, everyday symptom events, immediate symptoms, and the later response. The prototype works fully offline and includes an optional per-file Google Sheets synchronization path.
 
 ## What works
 
 - Several independently measured sessions per Europe/Berlin calendar date
+- Short symptom-event entries for situations such as sitting, walking, standing, travel, or rest
+- One daily timeline combining sessions and ordinary symptom changes without assigning automatic follow-ups to symptom events
 - Fast mobile daily editor with validation and automatic IndexedDB saves
-- Per-session 24-hour follow-up prompts, recorded check-in time, and calendar reminders
+- Per-session 24-hour follow-up prompts, a prominent multi-item due list, recorded check-in time, and calendar reminders
 - Monthly calendar with descriptive response markers
 - Basic symptom, duration, follow-up, and flare summaries
 - Versioned JSON backup/restore and CSV export with formula-injection protection
@@ -54,15 +56,16 @@ Entries are stored in IndexedDB on the current browser profile. Clearing site da
 - Use **Settings → Export JSON** for a complete, restorable backup.
 - Use **Export CSV** for review or a manual spreadsheet workflow.
 - Keep backups in a location approved for sensitive health information.
-- Importing a JSON backup upserts sessions by their stable ID and queues them locally.
+- Importing a JSON backup upserts entries by their stable ID and queues them locally.
 
 Google synchronization is optional. Without Google OAuth deployment configuration, the local app and all backup/export functions continue to work normally. Setup is documented in [docs/google-sheets-setup.md](docs/google-sheets-setup.md).
 
 ## Architecture
 
 - React + TypeScript + Vite
-- Dexie/IndexedDB with schema version 2 and an automatic migration from the original daily model
-- Session records keyed by stable UUID with non-unique date, session time, and individual follow-up due time
+- Dexie/IndexedDB with schema version 3 and automatic migrations from the original daily model
+- Session and symptom-event records keyed by stable UUID with non-unique date and event time
+- Sessions have individual follow-up due times; symptom events are explicitly excluded from automatic follow-ups
 - `SyncOutbox` coalesced by session ID, so repeated local edits queue one logical remote upsert
 - Pure date-only helpers; timestamps are UTC, calendar dates are never converted through local midnight
 - PWA caching through `vite-plugin-pwa`
@@ -81,6 +84,7 @@ The repository includes the verified empty [Rehab_Response_Tracker.xlsx](Rehab_R
 - Conflicts are detected and preserved, but the side-by-side conflict-resolution screen is not implemented yet.
 - Progress is intentionally basic and only uses complete symptom pairs; missing follow-ups are not plotted as zero.
 - Calendar reminders are used for reliable phone alerts; a closed static PWA cannot schedule its own background notification reliably.
+- A Capacitor Android wrapper with native local notifications is planned after the PWA flow has been tested on the target phone.
 - Browser storage is not a permanent backup.
 - The PWA has not yet been exercised on the target Android device or deployed to HTTPS.
 

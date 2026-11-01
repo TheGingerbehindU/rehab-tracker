@@ -211,11 +211,19 @@ function text(value: unknown): string {
 
 export function recordFromSheetRow(date: string, row: unknown[]): RehabDay {
   const sessionAt = text(row[16]) || sessionTimestamp(date, '12:00')
+  const entryType = text(row[19]) === 'symptom_event' ? 'symptom_event' : 'session'
   return {
     id: text(row[17]) || `remote-${date}`,
     date,
     sessionAt,
     followUpDueAt: text(row[18]) || followUpTimestamp(sessionAt),
+    entryType,
+    eventContext: ['Sitting', 'Standing', 'Walking', 'Driving / travel', 'Resting', 'After training', 'Other'].includes(text(row[20]))
+      ? text(row[20]) as RehabDay['eventContext']
+      : null,
+    eventChange: ['Worse', 'Better', 'No clear change'].includes(text(row[21]))
+      ? text(row[21]) as RehabDay['eventChange']
+      : null,
     sessionType: ['Strength', 'Running', 'Rehab', 'Recovery / rest', 'Other'].includes(text(row[1]))
       ? text(row[1]) as RehabDay['sessionType']
       : 'Other',
@@ -262,13 +270,13 @@ export function sheetValues(record: RehabDay) {
       record.notes,
       record.followUpComplete ? 'Yes' : 'No',
     ],
-    metadata: [record.sessionAt, record.id, record.followUpDueAt],
+    metadata: [record.sessionAt, record.id, record.followUpDueAt, record.entryType, record.eventContext ?? '', record.eventChange ?? ''],
   }
 }
 
 function fingerprintRecord(record: RehabDay) {
   const values = sheetValues(record)
-  const payload = JSON.stringify({ date: record.date, first: values.first, second: values.second })
+  const payload = JSON.stringify({ date: record.date, first: values.first, second: values.second, metadata: values.metadata })
   let hash = 2166136261
   for (let index = 0; index < payload.length; index += 1) {
     hash ^= payload.charCodeAt(index)
@@ -338,7 +346,7 @@ export class GoogleSheetsProvider implements CloudSyncProvider {
   }
 
   private async readRows(): Promise<unknown[][]> {
-    const data = await this.api(`/values/${sheetRange('A2:S1000')}?majorDimension=ROWS&valueRenderOption=UNFORMATTED_VALUE&dateTimeRenderOption=SERIAL_NUMBER`) as { values?: unknown[][] }
+    const data = await this.api(`/values/${sheetRange('A2:V1000')}?majorDimension=ROWS&valueRenderOption=UNFORMATTED_VALUE&dateTimeRenderOption=SERIAL_NUMBER`) as { values?: unknown[][] }
     return data.values ?? []
   }
 
@@ -351,12 +359,12 @@ export class GoogleSheetsProvider implements CloudSyncProvider {
 
   private async ensureMetadataHeaders() {
     if (this.metadataReady) return
-    const data = await this.api(`/values/${sheetRange('Q1:S1')}?majorDimension=ROWS`) as { values?: unknown[][] }
+    const data = await this.api(`/values/${sheetRange('Q1:V1')}?majorDimension=ROWS`) as { values?: unknown[][] }
     const headers = data.values?.[0]?.map(text) ?? []
-    if (headers.join('|') !== 'Session time|Session ID|24h follow-up due') {
-      await this.api(`/values/${sheetRange('Q1:S1')}?valueInputOption=RAW`, {
+    if (headers.join('|') !== 'Session time|Session ID|24h follow-up due|Entry type|Event context|Symptom change') {
+      await this.api(`/values/${sheetRange('Q1:V1')}?valueInputOption=RAW`, {
         method: 'PUT',
-        body: JSON.stringify({ majorDimension: 'ROWS', values: [['Session time', 'Session ID', '24h follow-up due']] }),
+        body: JSON.stringify({ majorDimension: 'ROWS', values: [['Session time', 'Session ID', '24h follow-up due', 'Entry type', 'Event context', 'Symptom change']] }),
       })
     }
     this.metadataReady = true
@@ -389,7 +397,7 @@ export class GoogleSheetsProvider implements CloudSyncProvider {
         { range: `'${SHEET_NAME}'!A${rowNumber}`, majorDimension: 'ROWS', values: [[record.date]] },
         { range: `'${SHEET_NAME}'!B${rowNumber}:H${rowNumber}`, majorDimension: 'ROWS', values: [values.first] },
         { range: `'${SHEET_NAME}'!J${rowNumber}:P${rowNumber}`, majorDimension: 'ROWS', values: [values.second] },
-        { range: `'${SHEET_NAME}'!Q${rowNumber}:S${rowNumber}`, majorDimension: 'ROWS', values: [values.metadata] },
+        { range: `'${SHEET_NAME}'!Q${rowNumber}:V${rowNumber}`, majorDimension: 'ROWS', values: [values.metadata] },
       ]
       if (!located) {
         data.push(

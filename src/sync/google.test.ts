@@ -34,7 +34,7 @@ describe('Google Sheets row mapping', () => {
     expect(record.followUpDueAt).toBe('2026-11-02T08:00:00.000Z')
     expect(sheetValues(record).first).toEqual(['Running', '4 × 60 m', 45, 7, 0, 2, 1])
     expect(sheetValues(record).second).toEqual(['Same', 'Achilles', 'Hops', 8, 'Continue as planned', 'Good surface', 'Yes'])
-    expect(sheetValues(record).metadata).toEqual(['2026-11-01T08:00:00.000Z', 'session-1', '2026-11-02T08:00:00.000Z'])
+    expect(sheetValues(record).metadata).toEqual(['2026-11-01T08:00:00.000Z', 'session-1', '2026-11-02T08:00:00.000Z', 'session', '', ''])
   })
 
   it('treats a prefilled date-only row as empty remote state', () => {
@@ -43,5 +43,26 @@ describe('Google Sheets row mapping', () => {
 
     const edited = { ...blankRehabDay('2026-11-01'), sessionContent: 'Rehab session' }
     expect(hasRemoteContent(edited)).toBe(true)
+  })
+
+  it('keeps symptom-event context in the metadata columns', () => {
+    const event = {
+      ...blankRehabDay('2026-11-01', new Date('2026-11-01T18:00:00.000Z'), 'symptom_event'),
+      eventContext: 'Sitting' as const,
+      eventChange: 'Worse' as const,
+      sessionContent: 'Dinner at a restaurant',
+    }
+    const values = sheetValues(event)
+    const restored = recordFromSheetRow(event.date, [
+      event.date,
+      ...values.first,
+      '',
+      ...values.second,
+      ...values.metadata,
+    ])
+
+    expect(restored.entryType).toBe('symptom_event')
+    expect(restored.eventContext).toBe('Sitting')
+    expect(restored.eventChange).toBe('Worse')
   })
 })

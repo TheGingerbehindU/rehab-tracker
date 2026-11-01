@@ -6,7 +6,13 @@ export function symptomDelta(day: Pick<RehabDay, 'symptomsBefore' | 'symptoms24h
 }
 
 export function hasSession(day: RehabDay): boolean {
+  if (day.entryType === 'symptom_event') return false
+  return hasEntry(day)
+}
+
+export function hasEntry(day: RehabDay): boolean {
   return Boolean(
+    day.entryType === 'symptom_event' ||
     day.sessionContent.trim() ||
       day.durationMinutes !== null ||
       day.rpe !== null ||
@@ -15,9 +21,10 @@ export function hasSession(day: RehabDay): boolean {
   )
 }
 
-export type DayTone = 'rest' | 'pending' | 'favorable' | 'mild' | 'major' | 'logged'
+export type DayTone = 'rest' | 'pending' | 'favorable' | 'mild' | 'major' | 'logged' | 'event'
 
 export function dayTone(day: RehabDay): DayTone {
+  if (day.entryType === 'symptom_event') return 'event'
   if (day.sessionType === 'Recovery / rest' && !hasSession(day)) return 'rest'
   if (day.response24h === 'Significant flare') return 'major'
   if (day.response24h === 'Mild flare') return 'mild'
@@ -34,6 +41,6 @@ export function toneLabel(tone: DayTone): string {
     mild: 'Mild flare',
     major: 'Significant flare',
     logged: 'Logged',
+    event: 'Symptom event',
   }[tone]
 }
-

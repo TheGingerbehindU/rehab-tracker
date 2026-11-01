@@ -1,10 +1,10 @@
 import Dexie, { type EntityTable } from 'dexie'
-import type { AppSetting, RehabDay, SessionType, SyncOutbox } from './types'
+import type { AppSetting, EntryType, RehabDay, SessionType, SyncOutbox } from './types'
 import { followUpTimestamp, sessionTimestamp, sessionTimeValue, todayInBerlin } from './lib/dates'
 
 export class RehabDatabase extends Dexie {
   days!: EntityTable<RehabDay, 'id'>
-  outbox!: EntityTable<SyncOutbox, 'date'>
+  syncOutbox!: EntityTable<SyncOutbox, 'recordId'>
   settings!: EntityTable<AppSetting, 'key'>
 
   constructor(name = 'rehab-tracker') {
@@ -16,7 +16,7 @@ export class RehabDatabase extends Dexie {
     })
     this.version(2).stores({
       days: 'id, date, sessionAt, followUpDueAt, updatedAt, syncStatus',
-      outbox: '&recordId, date, queuedAt',
+      outbox: '&date, recordId, queuedAt',
       settings: '&key',
     }).upgrade(async (transaction) => {
       await transaction.table('days').toCollection().modify((record: RehabDay) => {
@@ -25,12 +25,35 @@ export class RehabDatabase extends Dexie {
         record.followUpDueAt = record.followUpDueAt || followUpTimestamp(sessionAt)
       })
     })
+    this.version(3).stores({
+      days: 'id, date, sessionAt, followUpDueAt, entryType, updatedAt, syncStatus',
+      outbox: null,
+      syncOutbox: '&recordId, date, queuedAt',
+      settings: '&key',
+    }).upgrade(async (transaction) => {
+      const queue = transaction.table<SyncOutbox>('syncOutbox')
+      const days = transaction.table<RehabDay>('days')
+      const records = await days.toArray()
+      for (const record of records) {
+        record.entryType = record.entryType || 'session'
+        record.eventContext = record.eventContext || null
+        record.eventChange = record.eventChange || null
+        await days.put(record)
+        await queue.put({
+          date: record.date,
+          recordId: record.id,
+          queuedRevision: record.revision,
+          retryCount: 0,
+          queuedAt: record.updatedAt,
+        })
+      }
+    })
   }
 }
 
 export const db = new RehabDatabase()
 
-export function blankRehabDay(date: string, now = new Date()): RehabDay {
+export function blankRehabDay(date: string, now = new Date(), entryType: EntryType = 'session'): RehabDay {
   const nowIso = now.toISOString()
   const sessionAt = date === todayInBerlin(now)
     ? nowIso
@@ -40,6 +63,9 @@ export function blankRehabDay(date: string, now = new Date()): RehabDay {
     date,
     sessionAt,
     followUpDueAt: followUpTimestamp(sessionAt),
+    entryType,
+    eventContext: entryType === 'symptom_event' ? 'Sitting' : null,
+    eventChange: null,
     sessionType: 'Rehab' as SessionType,
     sessionContent: '',
     durationMinutes: null,
@@ -62,7 +88,7 @@ export function blankRehabDay(date: string, now = new Date()): RehabDay {
 }
 
 export async function saveRehabDay(input: RehabDay, database = db): Promise<RehabDay> {
-  return database.transaction('rw', database.days, database.outbox, async () => {
+  return database.transaction('rw', database.days, database.syncOutbox, async () => {
     const existingById = await database.days.get(input.id)
     const sessionAt = input.sessionAt || sessionTimestamp(input.date, sessionTimeValue(input.updatedAt))
     const saved: RehabDay = {
@@ -75,7 +101,7 @@ export async function saveRehabDay(input: RehabDay, database = db): Promise<Reha
       syncStatus: 'pending',
     }
     await database.days.put(saved)
-    await database.outbox.put({
+    await database.syncOutbox.put({
       date: saved.date,
       recordId: saved.id,
       queuedRevision: saved.revision,
@@ -87,7 +113,7 @@ export async function saveRehabDay(input: RehabDay, database = db): Promise<Reha
 }
 
 export async function importDays(records: RehabDay[]): Promise<number> {
-  await db.transaction('rw', db.days, db.outbox, async () => {
+  await db.transaction('rw', db.days, db.syncOutbox, async () => {
     for (const record of records) await saveRehabDay(record)
   })
   return records.length

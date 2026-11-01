@@ -6,14 +6,15 @@ import { displayDate, displayDateTime, elapsedHours, followUpTimestamp, isDateOn
 import { symptomDelta } from '../lib/derived'
 import { downloadFollowUpReminder } from '../lib/reminders'
 import { parseOptionalNumber, validateDay } from '../lib/validation'
-import { RESPONSE_TYPES, SESSION_TYPES, type RehabDay } from '../types'
+import { EVENT_CHANGES, EVENT_CONTEXTS, RESPONSE_TYPES, SESSION_TYPES, type EntryType, type RehabDay } from '../types'
 
 type Props = {
   date: string
   recordId?: string
+  entryType?: EntryType
   focusFollowUp?: boolean
   onBack: () => void
-  onDateChanged: (date: string) => void
+  onSaved: (record: RehabDay) => void
 }
 
 type SaveState = 'ready' | 'saving' | 'saved' | 'error'
@@ -82,7 +83,7 @@ function EuropeanDateField({ value, error, onChange }: { value: string; error?: 
   )
 }
 
-function EuropeanTimeField({ value, onChange }: { value: string; onChange(value: string): void }) {
+function EuropeanTimeField({ value, entryType, onChange }: { value: string; entryType: EntryType; onChange(value: string): void }) {
   const [input, setInput] = useState(() => sessionTimeValue(value))
   const [inputError, setInputError] = useState<string | null>(null)
 
@@ -96,19 +97,19 @@ function EuropeanTimeField({ value, onChange }: { value: string; onChange(value:
 
   return (
     <label className="field">
-      <span>Session time</span>
+      <span>{entryType === 'symptom_event' ? 'Event time' : 'Session time'}</span>
       <input inputMode="numeric" autoComplete="off" value={input} placeholder="HH:MM" aria-invalid={Boolean(inputError)} onChange={(event) => commit(event.target.value)} onBlur={() => {
         if (!/^([01]?\d|2[0-3]):[0-5]\d$/.test(input)) setInputError('Use 24-hour time, for example 18:30.')
       }} />
-      <small className="field-hint">24-hour time · starts the follow-up timer.</small>
+      <small className="field-hint">{entryType === 'symptom_event' ? '24-hour time · use when you noticed the change.' : '24-hour time · starts the follow-up timer.'}</small>
       {inputError && <span className="field-error">{inputError}</span>}
     </label>
   )
 }
 
-export function DayEditor({ date, recordId, focusFollowUp = false, onBack, onDateChanged }: Props) {
+export function DayEditor({ date, recordId, entryType = 'session', focusFollowUp = false, onBack, onSaved }: Props) {
   const stored = useLiveQuery(() => recordId ? db.days.get(recordId) : undefined, [recordId])
-  const [draft, setDraft] = useState<RehabDay>(() => blankRehabDay(date))
+  const [draft, setDraft] = useState<RehabDay>(() => blankRehabDay(date, new Date(), entryType))
   const [saveState, setSaveState] = useState<SaveState>('ready')
   const [saveMessage, setSaveMessage] = useState('Not saved yet')
   const [currentTime, setCurrentTime] = useState(() => Date.now())
@@ -116,11 +117,12 @@ export function DayEditor({ date, recordId, focusFollowUp = false, onBack, onDat
   const followUpRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
+    if (recordId && stored === undefined) return
     dirty.current = false
-    setDraft(stored ?? blankRehabDay(date))
+    setDraft(stored ?? blankRehabDay(date, new Date(), entryType))
     setSaveState(stored ? 'saved' : 'ready')
     setSaveMessage(stored ? 'Saved locally' : 'Not saved yet')
-  }, [date, recordId, stored])
+  }, [date, entryType, recordId, stored])
 
   useEffect(() => {
     if (focusFollowUp) requestAnimationFrame(() => followUpRef.current?.scrollIntoView({ behavior: 'smooth' }))
@@ -169,7 +171,7 @@ export function DayEditor({ date, recordId, focusFollowUp = false, onBack, onDat
       setDraft(saved)
       setSaveState('saved')
       setSaveMessage('Saved locally · Waiting to sync')
-      if (saved.date !== date) onDateChanged(saved.date)
+      onSaved(saved)
     } catch (error) {
       setSaveState('error')
       setSaveMessage(error instanceof Error ? error.message : 'Could not save this entry')
@@ -200,7 +202,7 @@ export function DayEditor({ date, recordId, focusFollowUp = false, onBack, onDat
           <ArrowLeft aria-hidden="true" />
         </button>
         <div>
-          <p className="context-label">{recordId ? 'Session' : 'New session'} · {displayDate(draft.date, { weekday: 'long' })}</p>
+          <p className="context-label">{draft.entryType === 'symptom_event' ? (recordId ? 'Symptom event' : 'New symptom event') : (recordId ? 'Session' : 'New session')} · {displayDate(draft.date, { weekday: 'long' })}</p>
           <h1>{displayDate(draft.date)}</h1>
         </div>
         <span className={`save-indicator ${saveState}`} aria-live="polite">
@@ -210,6 +212,7 @@ export function DayEditor({ date, recordId, focusFollowUp = false, onBack, onDat
       </header>
 
       <div className="editor-grid">
+        {draft.entryType === 'session' ? <>
         <section className="form-section training-section">
           <div className="section-heading">
             <span className="section-number">1</span>
@@ -217,7 +220,7 @@ export function DayEditor({ date, recordId, focusFollowUp = false, onBack, onDat
           </div>
           <div className="field-row session-when-row">
             <EuropeanDateField key={draft.date} value={draft.date} error={errors.date} onChange={updateDate} />
-            <EuropeanTimeField key={draft.sessionAt} value={draft.sessionAt} onChange={updateTime} />
+            <EuropeanTimeField key={draft.sessionAt} value={draft.sessionAt} entryType={draft.entryType} onChange={updateTime} />
             <label className="field">
               <span>Session type</span>
               <select value={draft.sessionType} onChange={(event) => update('sessionType', event.target.value as RehabDay['sessionType'])}>
@@ -319,6 +322,80 @@ export function DayEditor({ date, recordId, focusFollowUp = false, onBack, onDat
             <textarea rows={4} value={draft.notes} placeholder="Travel, stress, medication, surface or other context" onChange={(event) => update('notes', event.target.value)} />
           </label>
         </section>
+        </> : <>
+          <section className="form-section event-section">
+            <div className="section-heading">
+              <span className="section-number">1</span>
+              <div><h2>What happened?</h2><p>Capture the situation while it is still fresh.</p></div>
+            </div>
+            <div className="field-row session-when-row">
+              <EuropeanDateField key={draft.date} value={draft.date} error={errors.date} onChange={updateDate} />
+              <EuropeanTimeField key={draft.sessionAt} value={draft.sessionAt} entryType={draft.entryType} onChange={updateTime} />
+              <label className="field">
+                <span>Context</span>
+                <select value={draft.eventContext ?? 'Other'} onChange={(event) => update('eventContext', event.target.value as RehabDay['eventContext'])}>
+                  {EVENT_CONTEXTS.map((context) => <option key={context}>{context}</option>)}
+                </select>
+              </label>
+            </div>
+            <label className="field">
+              <span>What were you doing?</span>
+              <textarea
+                rows={4}
+                value={draft.sessionContent}
+                maxLength={1000}
+                placeholder="For example: Sitting at a restaurant for about an hour"
+                onChange={(event) => update('sessionContent', event.target.value)}
+              />
+            </label>
+            <NumberField name="durationMinutes" label="Time in that situation" value={draft.durationMinutes} min={0} max={1440} suffix="min" error={errors.durationMinutes} onChange={(value) => update('durationMinutes', value)} />
+          </section>
+
+          <section className="form-section event-change-section">
+            <div className="section-heading">
+              <span className="section-number">2</span>
+              <div><h2>What changed?</h2><p>Use the same 0–10 symptom scale each time.</p></div>
+            </div>
+            <fieldset className="choice-field">
+              <legend>Compared with before this situation</legend>
+              <div className="segmented-choices event-choices">
+                {EVENT_CHANGES.map((change) => (
+                  <label key={change}>
+                    <input type="radio" name={`event-change-${draft.id}`} checked={draft.eventChange === change} onChange={() => update('eventChange', change)} />
+                    <span>{change}</span>
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+            <div className="metric-grid two">
+              <NumberField name="symptomsBefore" label="Before" value={draft.symptomsBefore} min={0} max={10} suffix="/ 10" error={errors.symptomsBefore} onChange={(value) => update('symptomsBefore', value)} />
+              <NumberField name="symptomsAfter" label="When you noticed it" value={draft.symptomsAfter} min={0} max={10} suffix="/ 10" error={errors.symptomsAfter} onChange={(value) => update('symptomsAfter', value)} />
+            </div>
+            <label className="field">
+              <span>Where and what did you feel?</span>
+              <input maxLength={300} value={draft.symptomDetails} placeholder="For example: Right leg felt tight and tense" onChange={(event) => update('symptomDetails', event.target.value)} />
+            </label>
+            <label className="field">
+              <span>What did it affect?</span>
+              <input maxLength={300} value={draft.functionMarker} placeholder="For example: Standing up or walking normally" onChange={(event) => update('functionMarker', event.target.value)} />
+            </label>
+          </section>
+
+          <section className="form-section notes-section">
+            <div className="section-heading">
+              <span className="section-number">3</span>
+              <div><h2>What happened next?</h2><p>Small details can reveal patterns later.</p></div>
+            </div>
+            <label className="field">
+              <span>What helped, or what happened afterward?</span>
+              <textarea rows={4} maxLength={1000} value={draft.notes} placeholder="Walking, changing position, resting, medication or anything else" onChange={(event) => update('notes', event.target.value)} />
+            </label>
+            <div className="event-follow-up-note">
+              <Clock3 aria-hidden="true" />
+              <div><strong>No automatic 24-hour check-in</strong><p>Symptom events stay in the same timeline, but only training and rehab sessions create a 24-hour response.</p></div>
+            </div>
+          </section>
+        </>}
       </div>
 
       <div className="sticky-save">

@@ -15,13 +15,13 @@ async function mark(database: RehabDatabase, record: RehabDay, syncStatus: Rehab
 }
 
 export async function syncPending(database: RehabDatabase, provider: CloudSyncProvider): Promise<SyncSummary> {
-  const outbox = await database.outbox.orderBy('queuedAt').toArray()
+  const outbox = await database.syncOutbox.orderBy('queuedAt').toArray()
   const summary = { synced: 0, conflicts: 0, errors: 0 }
 
   for (const queued of outbox) {
     const local = await database.days.get(queued.recordId)
     if (!local) {
-      await database.outbox.delete(queued.recordId)
+      await database.syncOutbox.delete(queued.recordId)
       continue
     }
 
@@ -47,15 +47,15 @@ export async function syncPending(database: RehabDatabase, provider: CloudSyncPr
         continue
       }
       if (result.status === 'error') {
-        await database.transaction('rw', database.days, database.outbox, async () => {
+        await database.transaction('rw', database.days, database.syncOutbox, async () => {
           await mark(database, local, 'error')
-          await database.outbox.put({ ...queued, retryCount: queued.retryCount + 1 })
+          await database.syncOutbox.put({ ...queued, retryCount: queued.retryCount + 1 })
         })
         summary.errors += 1
         continue
       }
 
-      await database.transaction('rw', database.days, database.outbox, async () => {
+      await database.transaction('rw', database.days, database.syncOutbox, async () => {
         const latest = await database.days.get(local.id)
         if (!latest) return
         const unchanged = latest.revision === queued.queuedRevision
@@ -64,7 +64,7 @@ export async function syncPending(database: RehabDatabase, provider: CloudSyncPr
           remoteFingerprint: result.fingerprint,
           syncStatus: unchanged ? 'synced' : 'pending',
         })
-        if (unchanged) await database.outbox.delete(queued.recordId)
+        if (unchanged) await database.syncOutbox.delete(queued.recordId)
       })
       summary.synced += 1
     } catch {
