@@ -17,13 +17,13 @@ export interface CloudSyncProvider {
   upsert(record: RehabDay, expectedFingerprint?: string): Promise<SyncResult>
 }
 
-export class UnavailableSharePointProvider implements CloudSyncProvider {
-  readonly name = 'Microsoft SharePoint (not configured)'
+export class UnavailableGoogleSheetsProvider implements CloudSyncProvider {
+  readonly name = 'Google Sheets (not configured)'
 
   async probe() {
     return {
       available: false,
-      message: 'Cloud sync stays disabled until the authorized SharePoint feasibility check passes.',
+      message: 'Google Sheets sync needs browser OAuth configuration and a selected spreadsheet.',
     }
   }
 
@@ -34,7 +34,7 @@ export class UnavailableSharePointProvider implements CloudSyncProvider {
   async upsert(): Promise<SyncResult> {
     return {
       status: 'error',
-      message: 'SharePoint sync is not configured. Your entry remains saved on this device.',
+      message: 'Google Sheets sync is not configured. Your entry remains saved on this device.',
       retryable: false,
     }
   }
@@ -49,4 +49,3 @@ export function nextSyncStatus(current: RehabDay['syncStatus'], event: SyncEvent
   if (event === 'FAIL') return 'error'
   return current
 }
-

@@ -7,18 +7,17 @@ import {
   ChevronLeft,
   ChevronRight,
   CircleCheck,
-  CloudOff,
   Download,
   FileJson,
   Home,
   LineChart,
-  LockKeyhole,
   Plus,
   Settings,
   ShieldCheck,
   Upload,
 } from 'lucide-react'
 import { DayEditor } from './components/DayEditor'
+import { GoogleSyncSettings } from './components/GoogleSyncSettings'
 import { db, importDays } from './db'
 import { createBackup, downloadFile, parseBackup, recordsToCsv } from './lib/backup'
 import { addDays, displayDate, displayMonth, monthDays, monthKey, shiftMonth, todayInBerlin } from './lib/dates'
@@ -229,7 +228,7 @@ function SettingsView({ days }: { days: RehabDay[] }) {
       <div className="page-title-row"><div><p className="context-label">Settings</p><h1>Your data, under your control.</h1><p>Back up regularly. Browser data can be erased if you clear storage or uninstall the app.</p></div></div>
       {message && <div className="notice" role="status"><CircleCheck aria-hidden="true" />{message}<button type="button" onClick={() => setMessage(null)} aria-label="Dismiss">×</button></div>}
       <section className="settings-section"><div className="settings-intro"><FileJson aria-hidden="true" /><div><h2>Backup and restore</h2><p>JSON preserves every app field and is the recommended backup. CSV is designed for review or manual spreadsheet import.</p></div></div><div className="settings-actions"><button className="secondary-button" type="button" onClick={exportJson}><Download aria-hidden="true" /> Export JSON</button><button className="secondary-button" type="button" onClick={exportCsv}><Download aria-hidden="true" /> Export CSV</button><button className="secondary-button" type="button" onClick={() => fileRef.current?.click()}><Upload aria-hidden="true" /> Restore JSON</button><input ref={fileRef} className="visually-hidden" type="file" accept="application/json,.json" onChange={(event) => void handleImport(event.target.files?.[0])} /></div></section>
-      <section className="settings-section cloud-section"><div className="settings-intro"><CloudOff aria-hidden="true" /><div><h2>SharePoint sync</h2><p>Disabled until an authorized test copy passes the Microsoft access feasibility check. No credentials, workbook URLs or tenant IDs are stored in this prototype.</p></div></div><span className="disabled-badge"><LockKeyhole aria-hidden="true" /> Feasibility check required</span></section>
+      <GoogleSyncSettings onMessage={setMessage} />
       <section className="settings-section privacy-section"><div className="settings-intro"><ShieldCheck aria-hidden="true" /><div><h2>Privacy</h2><p>No analytics, advertising, AI services or remote app database. Data stays in this browser unless you export it. Do not rely on browser storage as your only backup.</p></div></div></section>
     </main>
   )

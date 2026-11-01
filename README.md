@@ -1,6 +1,6 @@
 # Rehab Tracker
 
-A private, offline-first Progressive Web App for recording rehabilitation and training sessions, immediate symptoms, and the later response. The current prototype implements Milestones 0–1 of the product specification and deliberately does **not** connect to Microsoft 365 yet.
+A private, offline-first Progressive Web App for recording rehabilitation and training sessions, immediate symptoms, and the later response. The prototype works fully offline and includes an optional per-file Google Sheets synchronization path.
 
 ## What works
 
@@ -11,7 +11,9 @@ A private, offline-first Progressive Web App for recording rehabilitation and tr
 - Basic symptom, duration, follow-up, and flare summaries
 - Versioned JSON backup/restore and CSV export with formula-injection protection
 - Offline app shell, install manifest, and service worker
-- Persistent sync outbox plus an isolated, currently unavailable cloud provider adapter
+- Persistent sync outbox with fetch-before-write Google Sheets synchronization
+- Per-file Google Drive Picker access; no broad Drive permission
+- Remote write verification and conflict detection
 - Light/dark mode, 44 px touch targets, and 320 px responsive layout
 
 No analytics, remote database, AI service, credentials, private SharePoint URL, or sample health record is included.
@@ -43,7 +45,7 @@ The production preview is where the generated service worker is active. In brows
 3. Use Chrome’s menu and choose **Install app** or **Add to Home screen**.
 4. Open the installed app once while online, then test reopening it in airplane mode.
 
-GitHub Pages deployment is intentionally deferred until the repository and hosting visibility are confirmed. The Vite build uses relative asset paths so it can run below a repository subpath.
+The repository includes a GitHub Pages workflow. The Vite build uses relative asset paths so it can run below a repository subpath. Configure the repository variables documented in [docs/google-sheets-setup.md](docs/google-sheets-setup.md) before expecting Google sign-in to work in the deployed app.
 
 ## Backups and privacy
 
@@ -54,7 +56,7 @@ Entries are stored in IndexedDB on the current browser profile. Clearing site da
 - Keep backups in a location approved for sensitive health information.
 - Importing a JSON backup upserts entries by their date and queues them locally.
 
-Cloud synchronization remains disabled until the organization-authorized feasibility check in [docs/sharepoint-feasibility.md](docs/sharepoint-feasibility.md) succeeds against a workbook copy.
+Google synchronization is optional. Without Google OAuth deployment configuration, the local app and all backup/export functions continue to work normally. Setup is documented in [docs/google-sheets-setup.md](docs/google-sheets-setup.md).
 
 ## Architecture
 
@@ -64,7 +66,8 @@ Cloud synchronization remains disabled until the organization-authorized feasibi
 - `SyncOutbox` coalesced by date, so repeated local edits queue one logical remote upsert
 - Pure date-only helpers; timestamps are UTC, calendar dates are never converted through local midnight
 - PWA caching through `vite-plugin-pwa`
-- `CloudSyncProvider` interface separates the future Graph implementation from local product behavior
+- `CloudSyncProvider` interface separates Google Sheets from local product behavior
+- Google tokens stay in memory; the selected sheet ID stays in IndexedDB
 
 More detail is in [docs/architecture.md](docs/architecture.md).
 
@@ -74,7 +77,8 @@ The repository includes the verified empty [Rehab_Response_Tracker.xlsx](Rehab_R
 
 ## Current limitations
 
-- SharePoint/Microsoft Graph sign-in, discovery, reads, writes, and conflict UI are not implemented.
+- Google Cloud OAuth/Picker credentials must be configured by the deployment owner.
+- Conflicts are detected and preserved, but the side-by-side conflict-resolution screen is not implemented yet.
 - Progress is intentionally basic and only uses complete symptom pairs; missing follow-ups are not plotted as zero.
 - One combined entry per day is supported. Separately measured multiple sessions require a data migration and workbook redesign.
 - Browser storage is not a permanent backup.

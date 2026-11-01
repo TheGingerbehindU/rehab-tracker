@@ -2,7 +2,7 @@
 
 ## Product boundary
 
-The local application is useful without an account or network. IndexedDB is the working source of truth while offline. The future SharePoint workbook is a reconciliation target, not a prerequisite for saving an entry.
+The local application is useful without an account or network. IndexedDB is the working source of truth while offline. A user-selected private Google Sheet is the shared reconciliation target, not a prerequisite for saving an entry.
 
 ## Data flow
 
@@ -10,7 +10,8 @@ The local application is useful without an account or network. IndexedDB is the 
 2. A 650 ms debounce (or **Save now**) calls one transactional local save.
 3. The transaction increments the record revision, marks it `pending`, and replaces the date-keyed outbox item.
 4. UI screens subscribe to Dexie queries and update after the transaction commits.
-5. A future sync orchestrator will fetch the remote row first, compare its fingerprint, then call the provider upsert only when safe.
+5. The sync orchestrator fetches the Google Sheets row first, compares its fingerprint, then calls the provider upsert only when safe.
+6. A verified write removes only the exact queued revision. An edit made during synchronization stays queued.
 
 ## Local stores — schema version 1
 
@@ -41,7 +42,6 @@ CSV follows the specified workbook input columns but omits Excel’s calculated 
 
 ## Cloud boundary
 
-`src/sync/provider.ts` defines the provider contract and an intentionally unavailable implementation. A Graph provider must not be added until the feasibility gate passes. It must support fetch-before-write, fingerprints, idempotent date upserts, retry classification, and explicit conflicts.
+`src/sync/provider.ts` defines the provider contract. `src/sync/google.ts` implements Google Identity Services, Google Picker, the Sheets REST API, date-based row lookup, remote fingerprints, and verified writes. `src/sync/orchestrator.ts` processes the persistent outbox and preserves conflicts and failures for review.
 
-No authentication secret belongs in the browser bundle. If authorized later, use MSAL Browser authorization code with PKCE and non-secret deployment configuration.
-
+The app requests Google’s per-file `drive.file` scope. OAuth access tokens stay in memory and are revoked on disconnect. The selected spreadsheet ID is stored locally; it is not committed or embedded in the deployment. No client secret belongs in the browser bundle.
