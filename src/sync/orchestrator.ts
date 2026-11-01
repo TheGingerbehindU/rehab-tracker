@@ -21,12 +21,12 @@ export async function syncPending(database: RehabDatabase, provider: CloudSyncPr
   for (const queued of outbox) {
     const local = await database.days.get(queued.recordId)
     if (!local) {
-      await database.outbox.delete(queued.date)
+      await database.outbox.delete(queued.recordId)
       continue
     }
 
     try {
-      const remote = await provider.fetchByDate(local.date)
+      const remote = await provider.fetch(local)
       const changedRemotely = Boolean(
         remote && (
           (local.remoteFingerprint && remote.fingerprint !== local.remoteFingerprint)
@@ -64,7 +64,7 @@ export async function syncPending(database: RehabDatabase, provider: CloudSyncPr
           remoteFingerprint: result.fingerprint,
           syncStatus: unchanged ? 'synced' : 'pending',
         })
-        if (unchanged) await database.outbox.delete(queued.date)
+        if (unchanged) await database.outbox.delete(queued.recordId)
       })
       summary.synced += 1
     } catch {

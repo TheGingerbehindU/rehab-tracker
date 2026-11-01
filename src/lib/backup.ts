@@ -1,8 +1,9 @@
 import type { BackupFile, RehabDay } from '../types'
+import { followUpTimestamp, sessionTimestamp } from './dates'
 
 export function createBackup(records: RehabDay[]): BackupFile {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     exportedAt: new Date().toISOString(),
     app: 'Rehab Tracker',
     records,
@@ -11,15 +12,20 @@ export function createBackup(records: RehabDay[]): BackupFile {
 
 export function parseBackup(value: unknown): BackupFile {
   if (!value || typeof value !== 'object') throw new Error('This is not a Rehab Tracker backup.')
-  const candidate = value as Partial<BackupFile>
-  if (candidate.schemaVersion !== 1 || !Array.isArray(candidate.records)) {
+  const candidate = value as Partial<BackupFile> & { schemaVersion?: number; records?: Array<Partial<RehabDay>> }
+  if (![1, 2].includes(candidate.schemaVersion ?? 0) || !Array.isArray(candidate.records)) {
     throw new Error('This backup version is not supported.')
   }
-  return candidate as BackupFile
+  const records = candidate.records.map((record) => {
+    const sessionAt = record.sessionAt || sessionTimestamp(record.date || '1970-01-01', '12:00')
+    return { ...record, sessionAt, followUpDueAt: record.followUpDueAt || followUpTimestamp(sessionAt) } as RehabDay
+  })
+  return { ...candidate, schemaVersion: 2, records } as BackupFile
 }
 
 const CSV_FIELDS: Array<[string, keyof RehabDay]> = [
   ['Date', 'date'],
+  ['Session time', 'sessionAt'],
   ['Day / activity type', 'sessionType'],
   ['Session content (exercises, sets, reps, loads)', 'sessionContent'],
   ['Duration (min)', 'durationMinutes'],
@@ -58,4 +64,3 @@ export function downloadFile(filename: string, content: string, type: string): v
   anchor.click()
   URL.revokeObjectURL(url)
 }
-

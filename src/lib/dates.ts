@@ -53,11 +53,9 @@ export function monthDays(key: string): Array<string | null> {
 
 export function displayDate(dateOnly: string, options?: Intl.DateTimeFormatOptions): string {
   const [year, month, day] = dateOnly.split('-').map(Number)
+  if (!options) return `${String(day).padStart(2, '0')}.${String(month).padStart(2, '0')}.${year}`
   return new Intl.DateTimeFormat('en-GB', {
     timeZone: 'UTC',
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
     ...options,
   }).format(new Date(Date.UTC(year, month - 1, day)))
 }
@@ -66,9 +64,43 @@ export function displayMonth(key: string): string {
   return displayDate(`${key}-01`, { month: 'long', year: 'numeric' })
 }
 
-export function elapsedHours(recordedAt: string | null, sessionDate: string): number | null {
-  if (!recordedAt) return null
-  const noonUtc = new Date(`${sessionDate}T12:00:00.000Z`).getTime()
-  return Math.max(0, Math.round((new Date(recordedAt).getTime() - noonUtc) / 36e5))
+export function sessionTimestamp(dateOnly: string, time: string): string {
+  const safeTime = /^\d{2}:\d{2}$/.test(time) ? time : '12:00'
+  return new Date(`${dateOnly}T${safeTime}:00`).toISOString()
 }
 
+export function sessionTimeValue(sessionAt: string): string {
+  const date = new Date(sessionAt)
+  if (Number.isNaN(date.getTime())) return '12:00'
+  return new Intl.DateTimeFormat('en-GB', {
+    timeZone: APP_TIME_ZONE,
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).format(date)
+}
+
+export function displayTime(sessionAt: string): string {
+  return sessionTimeValue(sessionAt)
+}
+
+export function followUpTimestamp(sessionAt: string): string {
+  const time = new Date(sessionAt).getTime()
+  return new Date(time + 24 * 60 * 60 * 1000).toISOString()
+}
+
+export function displayDateTime(timestamp: string): string {
+  return new Intl.DateTimeFormat('de-DE', {
+    timeZone: APP_TIME_ZONE,
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date(timestamp))
+}
+
+export function elapsedHours(recordedAt: string | null, sessionAt: string): number | null {
+  if (!recordedAt) return null
+  return Math.max(0, Math.round((new Date(recordedAt).getTime() - new Date(sessionAt).getTime()) / 36e5))
+}

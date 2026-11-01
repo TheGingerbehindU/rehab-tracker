@@ -1,5 +1,6 @@
 import Dexie, { type EntityTable } from 'dexie'
 import type { AppSetting, RehabDay, SessionType, SyncOutbox } from './types'
+import { followUpTimestamp, sessionTimestamp, sessionTimeValue, todayInBerlin } from './lib/dates'
 
 export class RehabDatabase extends Dexie {
   days!: EntityTable<RehabDay, 'id'>
@@ -13,16 +14,32 @@ export class RehabDatabase extends Dexie {
       outbox: '&date, recordId, queuedAt',
       settings: '&key',
     })
+    this.version(2).stores({
+      days: 'id, date, sessionAt, followUpDueAt, updatedAt, syncStatus',
+      outbox: '&recordId, date, queuedAt',
+      settings: '&key',
+    }).upgrade(async (transaction) => {
+      await transaction.table('days').toCollection().modify((record: RehabDay) => {
+        const sessionAt = record.sessionAt || sessionTimestamp(record.date, '12:00')
+        record.sessionAt = sessionAt
+        record.followUpDueAt = record.followUpDueAt || followUpTimestamp(sessionAt)
+      })
+    })
   }
 }
 
 export const db = new RehabDatabase()
 
-export function blankRehabDay(date: string): RehabDay {
-  const now = new Date().toISOString()
+export function blankRehabDay(date: string, now = new Date()): RehabDay {
+  const nowIso = now.toISOString()
+  const sessionAt = date === todayInBerlin(now)
+    ? nowIso
+    : sessionTimestamp(date, '12:00')
   return {
     id: crypto.randomUUID(),
     date,
+    sessionAt,
+    followUpDueAt: followUpTimestamp(sessionAt),
     sessionType: 'Rehab' as SessionType,
     sessionContent: '',
     durationMinutes: null,
@@ -38,7 +55,7 @@ export function blankRehabDay(date: string): RehabDay {
     notes: '',
     followUpComplete: false,
     followUpRecordedAt: null,
-    updatedAt: now,
+    updatedAt: nowIso,
     revision: 0,
     syncStatus: 'pending',
   }
@@ -47,20 +64,14 @@ export function blankRehabDay(date: string): RehabDay {
 export async function saveRehabDay(input: RehabDay, database = db): Promise<RehabDay> {
   return database.transaction('rw', database.days, database.outbox, async () => {
     const existingById = await database.days.get(input.id)
-    const existingByDate = await database.days.where('date').equals(input.date).first()
-    if (existingByDate && existingByDate.id !== input.id) {
-      throw new Error('An entry already exists for this date.')
-    }
-    if (existingById && existingById.date !== input.date) {
-      await database.days.delete(existingById.id)
-      await database.outbox.delete(existingById.date)
-    }
-    const existing = existingById ?? existingByDate
+    const sessionAt = input.sessionAt || sessionTimestamp(input.date, sessionTimeValue(input.updatedAt))
     const saved: RehabDay = {
       ...input,
-      id: existing?.id ?? input.id,
+      id: existingById?.id ?? input.id,
+      sessionAt,
+      followUpDueAt: followUpTimestamp(sessionAt),
       updatedAt: new Date().toISOString(),
-      revision: Math.max(input.revision, existing?.revision ?? 0) + 1,
+      revision: Math.max(input.revision, existingById?.revision ?? 0) + 1,
       syncStatus: 'pending',
     }
     await database.days.put(saved)

@@ -1,5 +1,6 @@
 import type { RehabDay } from '../types'
 import type { CloudSyncProvider, RemoteRecord, SyncResult } from './provider'
+import { followUpTimestamp, sessionTimestamp } from '../lib/dates'
 
 const DRIVE_FILE_SCOPE = 'https://www.googleapis.com/auth/drive.file'
 const SHEET_NAME = 'Daily Rehab Log'
@@ -209,9 +210,12 @@ function text(value: unknown): string {
 }
 
 export function recordFromSheetRow(date: string, row: unknown[]): RehabDay {
+  const sessionAt = text(row[16]) || sessionTimestamp(date, '12:00')
   return {
-    id: `remote-${date}`,
+    id: text(row[17]) || `remote-${date}`,
     date,
+    sessionAt,
+    followUpDueAt: text(row[18]) || followUpTimestamp(sessionAt),
     sessionType: ['Strength', 'Running', 'Rehab', 'Recovery / rest', 'Other'].includes(text(row[1]))
       ? text(row[1]) as RehabDay['sessionType']
       : 'Other',
@@ -258,11 +262,13 @@ export function sheetValues(record: RehabDay) {
       record.notes,
       record.followUpComplete ? 'Yes' : 'No',
     ],
+    metadata: [record.sessionAt, record.id, record.followUpDueAt],
   }
 }
 
 function fingerprintRecord(record: RehabDay) {
-  const payload = JSON.stringify({ date: record.date, ...sheetValues(record) })
+  const values = sheetValues(record)
+  const payload = JSON.stringify({ date: record.date, first: values.first, second: values.second })
   let hash = 2166136261
   for (let index = 0; index < payload.length; index += 1) {
     hash ^= payload.charCodeAt(index)
@@ -282,6 +288,7 @@ export class GoogleSheetsProvider implements CloudSyncProvider {
   private readonly spreadsheetId: string
   private readonly accessToken: string
   private readonly request: typeof fetch
+  private metadataReady = false
 
   constructor(
     spreadsheetId: string,
@@ -330,49 +337,74 @@ export class GoogleSheetsProvider implements CloudSyncProvider {
     }
   }
 
-  private async locate(date: string): Promise<{ rowNumber: number; row: unknown[] } | null> {
-    const data = await this.api(`/values/${sheetRange('A2:P1000')}?majorDimension=ROWS&valueRenderOption=UNFORMATTED_VALUE&dateTimeRenderOption=SERIAL_NUMBER`) as { values?: unknown[][] }
-    const index = data.values?.findIndex((row) => normalizeDate(row[0]) === date) ?? -1
-    return index < 0 ? null : { rowNumber: index + 2, row: data.values![index] }
+  private async readRows(): Promise<unknown[][]> {
+    const data = await this.api(`/values/${sheetRange('A2:S1000')}?majorDimension=ROWS&valueRenderOption=UNFORMATTED_VALUE&dateTimeRenderOption=SERIAL_NUMBER`) as { values?: unknown[][] }
+    return data.values ?? []
   }
 
-  async fetchByDate(date: string): Promise<RemoteRecord | null> {
-    const located = await this.locate(date)
+  private locate(record: RehabDay, rows: unknown[][]): { rowNumber: number; row: unknown[] } | null {
+    const exactIndex = rows.findIndex((row) => text(row[17]) === record.id)
+    if (exactIndex >= 0) return { rowNumber: exactIndex + 2, row: rows[exactIndex] }
+    const legacyIndex = rows.findIndex((row) => normalizeDate(row[0]) === record.date && !text(row[17]))
+    return legacyIndex < 0 ? null : { rowNumber: legacyIndex + 2, row: rows[legacyIndex] }
+  }
+
+  private async ensureMetadataHeaders() {
+    if (this.metadataReady) return
+    const data = await this.api(`/values/${sheetRange('Q1:S1')}?majorDimension=ROWS`) as { values?: unknown[][] }
+    const headers = data.values?.[0]?.map(text) ?? []
+    if (headers.join('|') !== 'Session time|Session ID|24h follow-up due') {
+      await this.api(`/values/${sheetRange('Q1:S1')}?valueInputOption=RAW`, {
+        method: 'PUT',
+        body: JSON.stringify({ majorDimension: 'ROWS', values: [['Session time', 'Session ID', '24h follow-up due']] }),
+      })
+    }
+    this.metadataReady = true
+  }
+
+  async fetch(record: RehabDay): Promise<RemoteRecord | null> {
+    const located = this.locate(record, await this.readRows())
     if (!located) return null
-    const record = recordFromSheetRow(date, located.row)
-    return { record, fingerprint: fingerprintRecord(record) }
+    const remote = recordFromSheetRow(record.date, located.row)
+    return { record: remote, fingerprint: fingerprintRecord(remote) }
   }
 
   async upsert(record: RehabDay, expectedFingerprint?: string): Promise<SyncResult> {
     try {
-      const located = await this.locate(record.date)
-      if (!located) {
-        return {
-          status: 'error',
-          message: 'This date is outside the prepared spreadsheet range. The entry remains saved locally.',
-          retryable: false,
+      await this.ensureMetadataHeaders()
+      const rows = await this.readRows()
+      const located = this.locate(record, rows)
+
+      if (located) {
+        const current = recordFromSheetRow(record.date, located.row)
+        const currentFingerprint = fingerprintRecord(current)
+        if (expectedFingerprint && currentFingerprint !== expectedFingerprint) {
+          return { status: 'conflict', remote: { record: current, fingerprint: currentFingerprint } }
         }
       }
 
-      const current = recordFromSheetRow(record.date, located.row)
-      const currentFingerprint = fingerprintRecord(current)
-      if (expectedFingerprint && currentFingerprint !== expectedFingerprint) {
-        return { status: 'conflict', remote: { record: current, fingerprint: currentFingerprint } }
-      }
-
       const values = sheetValues(record)
+      const rowNumber = located?.rowNumber ?? rows.length + 2
+      const data = [
+        { range: `'${SHEET_NAME}'!A${rowNumber}`, majorDimension: 'ROWS', values: [[record.date]] },
+        { range: `'${SHEET_NAME}'!B${rowNumber}:H${rowNumber}`, majorDimension: 'ROWS', values: [values.first] },
+        { range: `'${SHEET_NAME}'!J${rowNumber}:P${rowNumber}`, majorDimension: 'ROWS', values: [values.second] },
+        { range: `'${SHEET_NAME}'!Q${rowNumber}:S${rowNumber}`, majorDimension: 'ROWS', values: [values.metadata] },
+      ]
+      if (!located) {
+        data.push(
+          { range: `'${SHEET_NAME}'!I${rowNumber}`, majorDimension: 'ROWS', values: [[`=IF(OR(F${rowNumber}="",H${rowNumber}=""),"",H${rowNumber}-F${rowNumber})`]] },
+        )
+      }
       await this.api('/values:batchUpdate', {
         method: 'POST',
         body: JSON.stringify({
           valueInputOption: 'USER_ENTERED',
-          data: [
-            { range: `'${SHEET_NAME}'!B${located.rowNumber}:H${located.rowNumber}`, majorDimension: 'ROWS', values: [values.first] },
-            { range: `'${SHEET_NAME}'!J${located.rowNumber}:P${located.rowNumber}`, majorDimension: 'ROWS', values: [values.second] },
-          ],
+          data,
         }),
       })
 
-      const verified = await this.fetchByDate(record.date)
+      const verified = await this.fetch(record)
       if (!verified || fingerprintRecord(record) !== verified.fingerprint) {
         return { status: 'error', message: 'Google Sheets did not return the saved values. The entry remains queued.', retryable: true }
       }

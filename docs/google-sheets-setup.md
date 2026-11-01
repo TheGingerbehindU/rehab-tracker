@@ -32,7 +32,9 @@ VITE_GOOGLE_LOGIN_HINT=...
 2. Sign in with the spreadsheet owner account.
 3. Select **Rehab Response Tracker** in Google Picker.
 4. The app verifies that the spreadsheet contains a `Daily Rehab Log` tab.
-5. Tap **Sync now**. The app reads remote state before each write and updates only columns B–H and J–P. Column I remains formula-owned.
+5. Tap **Sync now**. The app reads remote state before each write and updates columns B–H and J–P. Column I remains formula-owned. Columns Q–S store session time, stable session ID, and follow-up due time so several sessions can share one date.
+
+The first session on a date reuses that date’s prepared row. Additional same-day sessions are appended as separate rows, with the calculated column-I formula added to each appended row.
 
 The spreadsheet should be shared directly with the coach as **Viewer**, not “Anyone with the link.” The coach uses Google Sheets or the browser and does not need to connect to the PWA.
 
@@ -51,6 +53,6 @@ The Pages workflow builds the same static PWA with those browser configuration v
 
 - Offline edits remain in IndexedDB and the outbox.
 - Expired authorization asks the user to connect again; it does not discard queued work.
-- A remote edit to the same date marks the local record as a conflict instead of overwriting it.
-- A date outside the template’s prepared range remains queued until the spreadsheet is extended safely.
+- A remote edit to the same session marks the local record as a conflict instead of overwriting it.
+- Additional sessions and dates outside the prepared range append verified rows without overwriting an existing session.
 - JSON export remains the independent recovery path if browser storage is cleared.

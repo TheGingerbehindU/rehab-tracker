@@ -20,6 +20,8 @@ export type SyncStatus = 'pending' | 'synced' | 'conflict' | 'error'
 export type RehabDay = {
   id: string
   date: string
+  sessionAt: string
+  followUpDueAt: string
   sessionType: SessionType
   sessionContent: string
   durationMinutes: number | null
@@ -55,9 +57,8 @@ export type AppSetting = {
 }
 
 export type BackupFile = {
-  schemaVersion: 1
+  schemaVersion: 2
   exportedAt: string
   app: 'Rehab Tracker'
   records: RehabDay[]
 }
-

@@ -21,14 +21,20 @@ describe('Google Sheets row mapping', () => {
       'Continue as planned',
       'Good surface',
       'Yes',
+      '2026-11-01T08:00:00.000Z',
+      'session-1',
+      '2026-11-02T08:00:00.000Z',
     ])
 
     expect(record.symptomsBefore).toBe(0)
     expect(record.symptoms24h).toBe(1)
     expect(record.response24h).toBe('Same')
     expect(record.followUpComplete).toBe(true)
+    expect(record.id).toBe('session-1')
+    expect(record.followUpDueAt).toBe('2026-11-02T08:00:00.000Z')
     expect(sheetValues(record).first).toEqual(['Running', '4 × 60 m', 45, 7, 0, 2, 1])
     expect(sheetValues(record).second).toEqual(['Same', 'Achilles', 'Hops', 8, 'Continue as planned', 'Good surface', 'Yes'])
+    expect(sheetValues(record).metadata).toEqual(['2026-11-01T08:00:00.000Z', 'session-1', '2026-11-02T08:00:00.000Z'])
   })
 
   it('treats a prefilled date-only row as empty remote state', () => {

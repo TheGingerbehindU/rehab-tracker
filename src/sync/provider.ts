@@ -13,7 +13,7 @@ export type SyncResult =
 export interface CloudSyncProvider {
   readonly name: string
   probe(): Promise<{ available: boolean; message: string }>
-  fetchByDate(date: string): Promise<RemoteRecord | null>
+  fetch(record: RehabDay): Promise<RemoteRecord | null>
   upsert(record: RehabDay, expectedFingerprint?: string): Promise<SyncResult>
 }
 
@@ -27,7 +27,7 @@ export class UnavailableGoogleSheetsProvider implements CloudSyncProvider {
     }
   }
 
-  async fetchByDate(): Promise<null> {
+  async fetch(): Promise<null> {
     return null
   }
 

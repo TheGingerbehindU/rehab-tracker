@@ -4,9 +4,9 @@ A private, offline-first Progressive Web App for recording rehabilitation and tr
 
 ## What works
 
-- One local entry per Europe/Berlin calendar date
+- Several independently measured sessions per Europe/Berlin calendar date
 - Fast mobile daily editor with validation and automatic IndexedDB saves
-- Next-day follow-up prompt and recorded follow-up time
+- Per-session 24-hour follow-up prompts, recorded check-in time, and calendar reminders
 - Monthly calendar with descriptive response markers
 - Basic symptom, duration, follow-up, and flare summaries
 - Versioned JSON backup/restore and CSV export with formula-injection protection
@@ -54,16 +54,16 @@ Entries are stored in IndexedDB on the current browser profile. Clearing site da
 - Use **Settings → Export JSON** for a complete, restorable backup.
 - Use **Export CSV** for review or a manual spreadsheet workflow.
 - Keep backups in a location approved for sensitive health information.
-- Importing a JSON backup upserts entries by their date and queues them locally.
+- Importing a JSON backup upserts sessions by their stable ID and queues them locally.
 
 Google synchronization is optional. Without Google OAuth deployment configuration, the local app and all backup/export functions continue to work normally. Setup is documented in [docs/google-sheets-setup.md](docs/google-sheets-setup.md).
 
 ## Architecture
 
 - React + TypeScript + Vite
-- Dexie/IndexedDB with schema version 1
-- `RehabDay` records keyed by stable UUID with a unique date index
-- `SyncOutbox` coalesced by date, so repeated local edits queue one logical remote upsert
+- Dexie/IndexedDB with schema version 2 and an automatic migration from the original daily model
+- Session records keyed by stable UUID with non-unique date, session time, and individual follow-up due time
+- `SyncOutbox` coalesced by session ID, so repeated local edits queue one logical remote upsert
 - Pure date-only helpers; timestamps are UTC, calendar dates are never converted through local midnight
 - PWA caching through `vite-plugin-pwa`
 - `CloudSyncProvider` interface separates Google Sheets from local product behavior
@@ -80,7 +80,7 @@ The repository includes the verified empty [Rehab_Response_Tracker.xlsx](Rehab_R
 - Google Cloud OAuth/Picker credentials must be configured by the deployment owner.
 - Conflicts are detected and preserved, but the side-by-side conflict-resolution screen is not implemented yet.
 - Progress is intentionally basic and only uses complete symptom pairs; missing follow-ups are not plotted as zero.
-- One combined entry per day is supported. Separately measured multiple sessions require a data migration and workbook redesign.
+- Calendar reminders are used for reliable phone alerts; a closed static PWA cannot schedule its own background notification reliably.
 - Browser storage is not a permanent backup.
 - The PWA has not yet been exercised on the target Android device or deployed to HTTPS.
 

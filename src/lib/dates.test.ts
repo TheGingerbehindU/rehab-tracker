@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { addDays, isDateOnly, monthDays, shiftMonth, todayInBerlin } from './dates'
+import { addDays, displayDate, followUpTimestamp, isDateOnly, monthDays, shiftMonth, todayInBerlin } from './dates'
 
 describe('date-only helpers', () => {
   it('uses the Europe/Berlin calendar day around midnight', () => {
@@ -23,5 +23,9 @@ describe('date-only helpers', () => {
     expect(isDateOnly('2026-02-29')).toBe(false)
     expect(isDateOnly('2028-02-29')).toBe(true)
   })
-})
 
+  it('uses European numeric dates and an exact 24-hour session follow-up', () => {
+    expect(displayDate('2026-11-01')).toBe('01.11.2026')
+    expect(followUpTimestamp('2026-11-01T08:30:00.000Z')).toBe('2026-11-02T08:30:00.000Z')
+  })
+})

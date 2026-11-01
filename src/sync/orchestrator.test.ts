@@ -8,7 +8,7 @@ class TestProvider implements CloudSyncProvider {
   remote: RemoteRecord | null = null
 
   async probe() { return { available: true, message: 'Ready' } }
-  async fetchByDate() { return this.remote }
+  async fetch() { return this.remote }
   async upsert(record: ReturnType<typeof blankRehabDay>): Promise<SyncResult> {
     this.remote = { record: { ...record, syncStatus: 'synced' }, fingerprint: `revision-${record.revision}` }
     return { status: 'synced', fingerprint: this.remote.fingerprint }
