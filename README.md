@@ -68,9 +68,9 @@ Cloud synchronization remains disabled until the organization-authorized feasibi
 
 More detail is in [docs/architecture.md](docs/architecture.md).
 
-## Workbook status
+## Workbook template
 
-The named `Rehab_Response_Tracker.xlsx` was not available when the repository was created. The column contract from the written specification is documented, but actual worksheet names, formulas, tables, styles, and weekly summary integrity have not been inspected. See [docs/workbook-analysis.md](docs/workbook-analysis.md).
+The repository includes the verified empty [Rehab_Response_Tracker.xlsx](Rehab_Response_Tracker.xlsx) integration template. It contains the exact A–P input contract, 120 dates from 2026-11-01 through 2027-02-28, protected-by-convention formulas in column I, validation lists, a usage guide, and formula-driven weekly summaries. See [docs/workbook-analysis.md](docs/workbook-analysis.md).
 
 ## Current limitations
 
@@ -83,4 +83,3 @@ The named `Rehab_Response_Tracker.xlsx` was not available when the repository wa
 ## Medical note
 
 The app records subjective observations. Its labels and charts are not diagnostic advice or medically validated thresholds.
-

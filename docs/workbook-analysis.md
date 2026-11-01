@@ -1,20 +1,38 @@
 # Workbook analysis
 
-Status: **blocked pending the actual `Rehab_Response_Tracker.xlsx` file**.
+Status: **verified generated template**.
 
-The written specification declares the first worksheet as **Daily Rehab Log**, with dates in column A, user-editable values in B–H and J–P, and a formula in I. It also declares **How to Use** and **Weekly Review** worksheets.
+`Rehab_Response_Tracker.xlsx` was created from the written specification and is committed at the repository root. It contains no personal or sample health records.
 
-The real workbook must be inspected before any integration work. In particular, verify:
+## Daily Rehab Log
 
-- exact worksheet names and order;
-- exact A–P header text and header row number;
-- whether the input range is an Excel Table;
-- actual date representation (serial value, formula, or text) and number format;
-- formula pattern and fill behavior in column I;
-- data validation/dropdowns and protected ranges;
-- prefilled 120-day boundary, footer/summary rows, and safe append method;
-- whether weekly review formulas use fixed or expanding ranges;
-- styles that must be preserved when extending the sheet.
+- Used range: `A1:P121`.
+- Excel Table: `DailyRehabLogTable`.
+- Header row: exact specification headers in `A1:P1`.
+- Date rows: 120 typed dates from `2026-11-01` through `2027-02-28`.
+- Formula column: `I2:I121` uses `=IF(OR(F2="",H2=""),"",H2-F2)` with row-relative references. The formula remains blank unless both symptom scores exist and preserves a recorded zero.
+- Editable cells: columns B–H and J–P, shown with pale yellow input fill.
+- Validation: session type, duration, RPE, symptom scores, response category, sleep hours, next-day decision, and follow-up completion.
+- Conditional formatting: descriptive response/follow-up colors only. No medical threshold is inferred.
+- Frozen header row and date column.
 
-Only inspect a local copy. Do not modify the live federation workbook during this milestone.
+## How to Use
 
+The sheet explains daily entry, same-row follow-up, scales, missing values, weekly review, privacy, workbook-copy precautions, and the SharePoint permission gate.
+
+## Weekly Review
+
+- Used range: `A2:I26`.
+- Eighteen Monday–Sunday periods cover every date in the daily log.
+- Formula-driven session count, total duration, average RPE, paired average 24-hour symptom change, completed follow-ups, and recorded flare count.
+- Missing RPE and symptom pairs remain blank rather than becoming zero.
+- Column I is an editable weekly-notes field.
+
+## Verification
+
+- Exported workbook re-imported with all three sheets, the full date range, Excel Table, and first/last formulas intact.
+- Formula-error scan returned no Excel errors.
+- A disposable boundary test confirmed that symptoms-before `0` remains numeric and that one sample session produced the correct weekly duration, RPE, symptom delta, follow-up, and response totals. Test values were removed before export.
+- Every worksheet was rendered and visually reviewed for readable labels, unclipped content, input cues, and formula output.
+
+The generated file is the approved local integration target. Continue to use a copy for the future Graph feasibility probe and obtain explicit approval before targeting any live federation workbook.
