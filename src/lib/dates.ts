@@ -5,6 +5,23 @@ export const HALF_HOUR_TIMES = Array.from({ length: 48 }, (_, index) => {
   return `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`
 })
 
+const BERLIN_PARTS = new Intl.DateTimeFormat('en-CA', {
+  timeZone: APP_TIME_ZONE,
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+  hourCycle: 'h23',
+})
+
+function berlinOffset(timestamp: number): number {
+  const parts = BERLIN_PARTS.formatToParts(new Date(timestamp))
+  const value = (type: Intl.DateTimeFormatPartTypes) => Number(parts.find((part) => part.type === type)?.value)
+  return Date.UTC(value('year'), value('month') - 1, value('day'), value('hour'), value('minute'), value('second')) - timestamp
+}
+
 export function todayInBerlin(now = new Date()): string {
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone: APP_TIME_ZONE,
@@ -71,7 +88,12 @@ export function displayMonth(key: string): string {
 
 export function sessionTimestamp(dateOnly: string, time: string): string {
   const safeTime = /^\d{2}:\d{2}$/.test(time) ? time : '12:00'
-  return new Date(`${dateOnly}T${safeTime}:00`).toISOString()
+  const [year, month, day] = dateOnly.split('-').map(Number)
+  const [hour, minute] = safeTime.split(':').map(Number)
+  const wallClock = Date.UTC(year, month - 1, day, hour, minute)
+  const firstPass = wallClock - berlinOffset(wallClock)
+  const adjustedOffset = berlinOffset(firstPass)
+  return new Date(wallClock - adjustedOffset).toISOString()
 }
 
 export function sessionTimeValue(sessionAt: string): string {
