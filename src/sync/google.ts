@@ -302,7 +302,7 @@ export class GoogleSheetsProvider implements CloudSyncProvider {
   ) {
     this.spreadsheetId = spreadsheetId
     this.accessToken = accessToken
-    this.request = request
+    this.request = request.bind(globalThis)
   }
 
   private async api(path: string, init?: RequestInit) {

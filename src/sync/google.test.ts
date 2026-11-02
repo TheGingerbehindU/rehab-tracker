@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { blankRehabDay } from '../db'
-import { hasRemoteContent, recordFromSheetRow, sheetValues } from './google'
+import { GoogleSheetsProvider, hasRemoteContent, recordFromSheetRow, sheetValues } from './google'
 
 describe('Google Sheets row mapping', () => {
   it('maps the workbook columns without using formula column I', () => {
@@ -64,5 +64,22 @@ describe('Google Sheets row mapping', () => {
     expect(restored.entryType).toBe('symptom_event')
     expect(restored.eventContext).toBe('Sitting')
     expect(restored.eventChange).toBe('Worse')
+  })
+
+  it('binds the browser request function before calling Google Sheets', async () => {
+    const request = function (this: typeof globalThis) {
+      if (this !== globalThis) throw new TypeError('Illegal invocation')
+      return Promise.resolve(new Response(JSON.stringify({
+        properties: { title: 'Rehab Response Tracker' },
+        sheets: [{ properties: { title: 'Daily Rehab Log' } }],
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+    } as typeof fetch
+
+    const provider = new GoogleSheetsProvider('spreadsheet-id', 'access-token', request)
+
+    await expect(provider.probe()).resolves.toEqual({
+      available: true,
+      message: 'Connected to Rehab Response Tracker.',
+    })
   })
 })
