@@ -51,9 +51,7 @@ type GoogleWindow = Window & {
       Action: { PICKED: string; CANCEL: string }
       Response: { ACTION: string; DOCUMENTS: string }
       ViewId: { SPREADSHEETS: string }
-      DocsView: new (viewId: string) => {
-        setOwnedByMe(value: boolean): unknown
-      }
+      DocsView: new (viewId: string) => unknown
       PickerBuilder: new () => {
         addView(view: unknown): unknown
         setOAuthToken(token: string): unknown
@@ -148,7 +146,6 @@ export class GoogleDriveSession {
 
     return new Promise((resolve, reject) => {
       const view = new picker.DocsView(picker.ViewId.SPREADSHEETS)
-      view.setOwnedByMe(true)
       const builder = new picker.PickerBuilder()
       builder.addView(view)
       builder.setOAuthToken(this.accessToken!)
