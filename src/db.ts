@@ -1,6 +1,6 @@
 import Dexie, { type EntityTable } from 'dexie'
 import type { AppSetting, EntryType, RehabDay, SessionType, SyncOutbox } from './types'
-import { followUpTimestamp, sessionTimestamp, sessionTimeValue, todayInBerlin } from './lib/dates'
+import { followUpTimestamp, nearestHalfHour, sessionTimestamp, sessionTimeValue, todayInBerlin } from './lib/dates'
 
 export class RehabDatabase extends Dexie {
   days!: EntityTable<RehabDay, 'id'>
@@ -53,11 +53,11 @@ export class RehabDatabase extends Dexie {
 
 export const db = new RehabDatabase()
 
-export function blankRehabDay(date: string, now = new Date(), entryType: EntryType = 'session'): RehabDay {
+export function blankRehabDay(date: string, now = new Date(), entryType: EntryType = 'session', preferredSessionTime = '12:00'): RehabDay {
   const nowIso = now.toISOString()
-  const sessionAt = date === todayInBerlin(now)
+  const sessionAt = entryType === 'symptom_event' && date === todayInBerlin(now)
     ? nowIso
-    : sessionTimestamp(date, '12:00')
+    : sessionTimestamp(date, entryType === 'session' ? nearestHalfHour(preferredSessionTime) : '12:00')
   return {
     id: crypto.randomUUID(),
     date,
@@ -85,6 +85,13 @@ export function blankRehabDay(date: string, now = new Date(), entryType: EntryTy
     revision: 0,
     syncStatus: 'pending',
   }
+}
+
+export async function latestSessionTime(database = db): Promise<string> {
+  const sessions = await database.days.where('entryType').equals('session').toArray()
+  if (!sessions.length) return '12:00'
+  const latest = sessions.reduce((current, candidate) => candidate.sessionAt > current.sessionAt ? candidate : current)
+  return nearestHalfHour(sessionTimeValue(latest.sessionAt))
 }
 
 export async function saveRehabDay(input: RehabDay, database = db): Promise<RehabDay> {

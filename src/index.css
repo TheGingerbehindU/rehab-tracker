@@ -51,6 +51,7 @@ p { color: var(--muted); line-height: 1.6; }
 .brand small { color: var(--muted); font-size: .74rem; }
 .local-status { display: inline-flex; align-items: center; gap: 9px; color: var(--muted); font-size: .84rem; }
 .status-dot { width: 9px; height: 9px; border: 2px solid var(--surface); border-radius: 999px; background: var(--amber); box-shadow: 0 0 0 1px var(--amber); }
+.local-status.is-synced .status-dot { background: var(--teal); box-shadow: 0 0 0 1px var(--teal); }
 .context-label { margin-bottom: 9px; color: var(--blue); font-size: .78rem; font-weight: 750; letter-spacing: .025em; }
 
 .primary-button, .secondary-button, .icon-button, .text-button { min-height: 44px; border: 0; cursor: pointer; }

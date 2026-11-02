@@ -1,5 +1,10 @@
 export const APP_TIME_ZONE = 'Europe/Berlin'
 
+export const HALF_HOUR_TIMES = Array.from({ length: 48 }, (_, index) => {
+  const minutes = index * 30
+  return `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`
+})
+
 export function todayInBerlin(now = new Date()): string {
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone: APP_TIME_ZONE,
@@ -78,6 +83,14 @@ export function sessionTimeValue(sessionAt: string): string {
     minute: '2-digit',
     hourCycle: 'h23',
   }).format(date)
+}
+
+export function nearestHalfHour(time: string): string {
+  const match = time.match(/^(\d{1,2}):(\d{2})$/)
+  if (!match) return '12:00'
+  const minutes = Number(match[1]) * 60 + Number(match[2])
+  const rounded = Math.min(23 * 60 + 30, Math.max(0, Math.round(minutes / 30) * 30))
+  return `${String(Math.floor(rounded / 60)).padStart(2, '0')}:${String(rounded % 60).padStart(2, '0')}`
 }
 
 export function displayTime(sessionAt: string): string {

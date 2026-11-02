@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { ArrowLeft, CalendarPlus, Check, Clock3, Save } from 'lucide-react'
-import { blankRehabDay, db, saveRehabDay } from '../db'
-import { displayDate, displayDateTime, elapsedHours, followUpTimestamp, isDateOnly, sessionTimestamp, sessionTimeValue } from '../lib/dates'
+import { blankRehabDay, db, latestSessionTime, saveRehabDay } from '../db'
+import { displayDate, displayDateTime, elapsedHours, followUpTimestamp, HALF_HOUR_TIMES, isDateOnly, sessionTimestamp, sessionTimeValue } from '../lib/dates'
 import { symptomDelta } from '../lib/derived'
 import { downloadFollowUpReminder } from '../lib/reminders'
 import { parseOptionalNumber, validateDay } from '../lib/validation'
@@ -84,32 +84,28 @@ function EuropeanDateField({ value, error, onChange }: { value: string; error?: 
 }
 
 function EuropeanTimeField({ value, entryType, onChange }: { value: string; entryType: EntryType; onChange(value: string): void }) {
-  const [input, setInput] = useState(() => sessionTimeValue(value))
-  const [inputError, setInputError] = useState<string | null>(null)
-
-  function commit(next: string) {
-    setInput(next)
-    const match = next.match(/^(\d{1,2}):(\d{2})$/)
-    if (!match || Number(match[1]) > 23 || Number(match[2]) > 59) return
-    setInputError(null)
-    onChange(`${match[1].padStart(2, '0')}:${match[2]}`)
-  }
+  const input = sessionTimeValue(value)
+  const standardOptions = HALF_HOUR_TIMES.includes(input) ? HALF_HOUR_TIMES : [input, ...HALF_HOUR_TIMES]
 
   return (
     <label className="field">
       <span>{entryType === 'symptom_event' ? 'Event time' : 'Session time'}</span>
-      <input inputMode="numeric" autoComplete="off" value={input} placeholder="HH:MM" aria-invalid={Boolean(inputError)} onChange={(event) => commit(event.target.value)} onBlur={() => {
-        if (!/^([01]?\d|2[0-3]):[0-5]\d$/.test(input)) setInputError('Use 24-hour time, for example 18:30.')
-      }} />
-      <small className="field-hint">{entryType === 'symptom_event' ? '24-hour time · use when you noticed the change.' : '24-hour time · starts the follow-up timer.'}</small>
-      {inputError && <span className="field-error">{inputError}</span>}
+      {entryType === 'session' ? (
+        <select value={input} onChange={(event) => onChange(event.target.value)}>
+          {standardOptions.map((time) => <option key={time} value={time}>{time}</option>)}
+        </select>
+      ) : (
+        <input type="time" step="60" value={input} onChange={(event) => onChange(event.target.value)} />
+      )}
+      <small className="field-hint">{entryType === 'symptom_event' ? 'Use the time you noticed the change.' : '30-minute intervals · defaults to your last training start time.'}</small>
     </label>
   )
 }
 
 export function DayEditor({ date, recordId, entryType = 'session', focusFollowUp = false, onBack, onSaved }: Props) {
   const stored = useLiveQuery(() => recordId ? db.days.get(recordId) : undefined, [recordId])
-  const [draft, setDraft] = useState<RehabDay>(() => blankRehabDay(date, new Date(), entryType))
+  const preferredSessionTime = useLiveQuery(() => entryType === 'session' ? latestSessionTime() : Promise.resolve('12:00'), [entryType])
+  const [draft, setDraft] = useState<RehabDay>(() => blankRehabDay(date, new Date(), entryType, '12:00'))
   const [saveState, setSaveState] = useState<SaveState>('ready')
   const [saveMessage, setSaveMessage] = useState('Not saved yet')
   const [currentTime, setCurrentTime] = useState(() => Date.now())
@@ -118,11 +114,12 @@ export function DayEditor({ date, recordId, entryType = 'session', focusFollowUp
 
   useEffect(() => {
     if (recordId && stored === undefined) return
+    if (!recordId && entryType === 'session' && preferredSessionTime === undefined) return
     dirty.current = false
-    setDraft(stored ?? blankRehabDay(date, new Date(), entryType))
+    setDraft(stored ?? blankRehabDay(date, new Date(), entryType, preferredSessionTime ?? '12:00'))
     setSaveState(stored ? 'saved' : 'ready')
     setSaveMessage(stored ? 'Saved locally' : 'Not saved yet')
-  }, [date, entryType, recordId, stored])
+  }, [date, entryType, preferredSessionTime, recordId, stored])
 
   useEffect(() => {
     if (focusFollowUp) requestAnimationFrame(() => followUpRef.current?.scrollIntoView({ behavior: 'smooth' }))

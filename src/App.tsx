@@ -25,6 +25,7 @@ import { createBackup, downloadFile, parseBackup, recordsToCsv } from './lib/bac
 import { displayDate, displayMonth, displayTime, monthDays, monthKey, shiftMonth, todayInBerlin } from './lib/dates'
 import { dayTone, hasSession, symptomDelta, toneLabel } from './lib/derived'
 import { isDateOnly } from './lib/dates'
+import { GOOGLE_SETTING_KEYS, scheduleAutomaticGoogleSync } from './sync/googleRuntime'
 import type { EntryType, RehabDay } from './types'
 import './index.css'
 
@@ -77,16 +78,19 @@ function DayOverview({ date, days, openEditor, onBack }: { date: string; days: R
   )
 }
 
-function AppHeader({ pending }: { pending: number }) {
+function AppHeader({ pending, sheetSelected }: { pending: number; sheetSelected: boolean }) {
+  const status = pending
+    ? `${pending} ${pending === 1 ? 'entry' : 'entries'} waiting to sync`
+    : sheetSelected ? 'Google Sheet up to date' : 'Saved on this device'
   return (
     <header className="app-header">
       <a className="brand" href="#top" aria-label="Rehab Tracker home">
         <span className="brand-mark"><Activity aria-hidden="true" /></span>
         <span><strong>Rehab Tracker</strong><small>Private training log</small></span>
       </a>
-      <div className="local-status">
+      <div className={`local-status ${!pending && sheetSelected ? 'is-synced' : ''}`}>
         <span className="status-dot" />
-        {pending ? `${pending} waiting to sync` : 'Saved on this device'}
+        {status}
       </div>
     </header>
   )
@@ -300,18 +304,38 @@ function App() {
   const [editor, setEditor] = useState<EditorState>(null)
   const days = useLiveQuery(() => db.days.toArray(), []) ?? []
   const pending = useLiveQuery(() => db.syncOutbox.count(), []) ?? 0
+  const selectedSheet = useLiveQuery(() => db.settings.get(GOOGLE_SETTING_KEYS.id), [])
+
+  useEffect(() => {
+    const resumeSync = () => scheduleAutomaticGoogleSync(250)
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') resumeSync()
+    }
+    window.addEventListener('online', resumeSync)
+    document.addEventListener('visibilitychange', handleVisibility)
+    const timer = window.setInterval(resumeSync, 5 * 60_000)
+    resumeSync()
+    return () => {
+      window.removeEventListener('online', resumeSync)
+      document.removeEventListener('visibilitychange', handleVisibility)
+      window.clearInterval(timer)
+    }
+  }, [])
 
   if (editor?.overview) {
     return <DayOverview date={editor.date} days={days} openEditor={setEditor} onBack={() => setEditor(null)} />
   }
 
   if (editor) {
-    return <DayEditor date={editor.date} recordId={editor.recordId} entryType={editor.entryType} focusFollowUp={editor.followUp} onBack={() => setEditor(editor.recordId ? { date: editor.date, overview: true } : null)} onSaved={(record) => setEditor((current) => current ? { ...current, date: record.date, recordId: record.id, entryType: record.entryType } : null)} />
+    return <DayEditor date={editor.date} recordId={editor.recordId} entryType={editor.entryType} focusFollowUp={editor.followUp} onBack={() => setEditor(editor.recordId ? { date: editor.date, overview: true } : null)} onSaved={(record) => {
+      setEditor((current) => current ? { ...current, date: record.date, recordId: record.id, entryType: record.entryType } : null)
+      scheduleAutomaticGoogleSync()
+    }} />
   }
 
   return (
     <div className="app-frame">
-      <AppHeader pending={pending} />
+      <AppHeader pending={pending} sheetSelected={Boolean(selectedSheet?.value)} />
       {view === 'home' && <HomeView days={days} openEditor={setEditor} />}
       {view === 'calendar' && <CalendarView days={days} openEditor={setEditor} />}
       {view === 'progress' && <ProgressView days={days} />}

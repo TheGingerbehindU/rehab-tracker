@@ -1,6 +1,6 @@
 import type { RehabDay } from '../types'
 import type { CloudSyncProvider, RemoteRecord, SyncResult } from './provider'
-import { followUpTimestamp, sessionTimestamp } from '../lib/dates'
+import { followUpTimestamp, sessionTimestamp, sessionTimeValue } from '../lib/dates'
 
 const DRIVE_FILE_SCOPE = 'https://www.googleapis.com/auth/drive.file'
 const SHEET_NAME = 'Daily Rehab Log'
@@ -8,6 +8,7 @@ const GOOGLE_API_ROOT = 'https://sheets.googleapis.com/v4/spreadsheets'
 
 type GoogleTokenResponse = {
   access_token?: string
+  expires_in?: number
   error?: string
   error_description?: string
 }
@@ -110,6 +111,7 @@ export function googleClientConfig(): GoogleClientConfig | null {
 
 export class GoogleDriveSession {
   private accessToken: string | null = null
+  private accessTokenExpiresAt = 0
   private readonly config: GoogleClientConfig
 
   constructor(config: GoogleClientConfig) {
@@ -117,26 +119,27 @@ export class GoogleDriveSession {
   }
 
   get connected() {
-    return Boolean(this.accessToken)
+    return Boolean(this.accessToken) && Date.now() < this.accessTokenExpiresAt - 60_000
   }
 
   async authorize(loginHint?: string): Promise<string> {
     const googleWindow = await loadGoogleLibraries()
-    const token = await new Promise<string>((resolve, reject) => {
+    const response = await new Promise<GoogleTokenResponse>((resolve, reject) => {
       const client = googleWindow.google!.accounts.oauth2.initTokenClient({
         client_id: this.config.clientId,
         scope: DRIVE_FILE_SCOPE,
         hint: loginHint,
         callback: (response) => {
-          if (response.access_token) resolve(response.access_token)
+          if (response.access_token) resolve(response)
           else reject(new Error(response.error_description || response.error || 'Google sign-in was not completed.'))
         },
         error_callback: () => reject(new Error('Google sign-in was cancelled or blocked.')),
       })
       client.requestAccessToken({ prompt: this.accessToken ? '' : 'consent' })
     })
-    this.accessToken = token
-    return token
+    this.accessToken = response.access_token!
+    this.accessTokenExpiresAt = Date.now() + (response.expires_in ?? 3_600) * 1_000
+    return response.access_token!
   }
 
   async pickSpreadsheet(): Promise<PickedSpreadsheet> {
@@ -169,13 +172,14 @@ export class GoogleDriveSession {
   }
 
   provider(spreadsheetId: string) {
-    if (!this.accessToken) throw new Error('Connect your Google account first.')
+    if (!this.connected || !this.accessToken) throw new Error('Reconnect Google to continue syncing.')
     return new GoogleSheetsProvider(spreadsheetId, this.accessToken)
   }
 
   disconnect() {
     const token = this.accessToken
     this.accessToken = null
+    this.accessTokenExpiresAt = 0
     if (token) (window as GoogleWindow).google?.accounts.oauth2.revoke(token)
   }
 }
@@ -343,7 +347,7 @@ export class GoogleSheetsProvider implements CloudSyncProvider {
   }
 
   private async readRows(): Promise<unknown[][]> {
-    const data = await this.api(`/values/${sheetRange('A2:V1000')}?majorDimension=ROWS&valueRenderOption=UNFORMATTED_VALUE&dateTimeRenderOption=SERIAL_NUMBER`) as { values?: unknown[][] }
+    const data = await this.api(`/values/${sheetRange('A2:W1000')}?majorDimension=ROWS&valueRenderOption=UNFORMATTED_VALUE&dateTimeRenderOption=SERIAL_NUMBER`) as { values?: unknown[][] }
     return data.values ?? []
   }
 
@@ -356,12 +360,12 @@ export class GoogleSheetsProvider implements CloudSyncProvider {
 
   private async ensureMetadataHeaders() {
     if (this.metadataReady) return
-    const data = await this.api(`/values/${sheetRange('Q1:V1')}?majorDimension=ROWS`) as { values?: unknown[][] }
+    const data = await this.api(`/values/${sheetRange('Q1:W1')}?majorDimension=ROWS`) as { values?: unknown[][] }
     const headers = data.values?.[0]?.map(text) ?? []
-    if (headers.join('|') !== 'Session time|Session ID|24h follow-up due|Entry type|Event context|Symptom change') {
-      await this.api(`/values/${sheetRange('Q1:V1')}?valueInputOption=RAW`, {
+    if (headers.join('|') !== 'Session time|Session ID|24h follow-up due|Entry type|Event context|Symptom change|Local time') {
+      await this.api(`/values/${sheetRange('Q1:W1')}?valueInputOption=RAW`, {
         method: 'PUT',
-        body: JSON.stringify({ majorDimension: 'ROWS', values: [['Session time', 'Session ID', '24h follow-up due', 'Entry type', 'Event context', 'Symptom change']] }),
+        body: JSON.stringify({ majorDimension: 'ROWS', values: [['Session time', 'Session ID', '24h follow-up due', 'Entry type', 'Event context', 'Symptom change', 'Local time']] }),
       })
     }
     this.metadataReady = true
@@ -395,10 +399,11 @@ export class GoogleSheetsProvider implements CloudSyncProvider {
         { range: `'${SHEET_NAME}'!B${rowNumber}:H${rowNumber}`, majorDimension: 'ROWS', values: [values.first] },
         { range: `'${SHEET_NAME}'!J${rowNumber}:P${rowNumber}`, majorDimension: 'ROWS', values: [values.second] },
         { range: `'${SHEET_NAME}'!Q${rowNumber}:V${rowNumber}`, majorDimension: 'ROWS', values: [values.metadata] },
+        { range: `'${SHEET_NAME}'!W${rowNumber}`, majorDimension: 'ROWS', values: [[sessionTimeValue(record.sessionAt)]] },
       ]
       if (!located) {
         data.push(
-          { range: `'${SHEET_NAME}'!I${rowNumber}`, majorDimension: 'ROWS', values: [[`=IF(OR(F${rowNumber}="",H${rowNumber}=""),"",H${rowNumber}-F${rowNumber})`]] },
+          { range: `'${SHEET_NAME}'!I${rowNumber}`, majorDimension: 'ROWS', values: [[`=IF(OR(F${rowNumber}="";H${rowNumber}="");"";H${rowNumber}-F${rowNumber})`]] },
         )
       }
       await this.api('/values:batchUpdate', {

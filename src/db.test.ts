@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import Dexie from 'dexie'
-import { blankRehabDay, RehabDatabase, saveRehabDay } from './db'
+import { blankRehabDay, latestSessionTime, RehabDatabase, saveRehabDay } from './db'
 
 describe('local upsert and outbox', () => {
   const databases: RehabDatabase[] = []
@@ -36,6 +36,17 @@ describe('local upsert and outbox', () => {
     const entries = await database.days.where('date').equals('2026-11-01').toArray()
     expect(entries).toHaveLength(2)
     expect(entries.map((entry) => entry.entryType).sort()).toEqual(['session', 'symptom_event'])
+  })
+
+  it('defaults new sessions to the latest training start time or noon', async () => {
+    const database = new RehabDatabase(`test-${crypto.randomUUID()}`)
+    databases.push(database)
+    expect(await latestSessionTime(database)).toBe('12:00')
+
+    await saveRehabDay({ ...blankRehabDay('2026-11-01', new Date(), 'session', '16:30'), sessionContent: 'Afternoon rehab' }, database)
+    await saveRehabDay({ ...blankRehabDay('2026-11-02', new Date(), 'symptom_event'), sessionContent: 'Dinner' }, database)
+
+    expect(await latestSessionTime(database)).toBe('16:30')
   })
 
   it('upgrades the original date-keyed sync queue without losing records', async () => {

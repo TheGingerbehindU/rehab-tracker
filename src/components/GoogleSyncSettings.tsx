@@ -1,16 +1,9 @@
-import { useRef, useState } from 'react'
+import { useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { Cloud, ExternalLink, LogIn, RefreshCw, Unplug } from 'lucide-react'
 import { db } from '../db'
-import { googleClientConfig, GoogleDriveSession } from '../sync/google'
-import { syncPending } from '../sync/orchestrator'
-
-const SETTING_KEYS = {
-  id: 'google.spreadsheetId',
-  name: 'google.spreadsheetName',
-  url: 'google.spreadsheetUrl',
-  lastSync: 'google.lastSuccessfulSync',
-} as const
+import { googleClientConfig } from '../sync/google'
+import { disconnectGoogleDrive, googleDriveSession, GOOGLE_SETTING_KEYS, syncSelectedGoogleSheet } from '../sync/googleRuntime'
 
 type Props = {
   onMessage(message: string): void
@@ -18,15 +11,14 @@ type Props = {
 
 export function GoogleSyncSettings({ onMessage }: Props) {
   const config = googleClientConfig()
-  const sessionRef = useRef<GoogleDriveSession | null>(config ? new GoogleDriveSession(config) : null)
   const [busy, setBusy] = useState(false)
   const [connected, setConnected] = useState(false)
   const settings = useLiveQuery(async () => {
     const [id, name, url, lastSync] = await Promise.all([
-      db.settings.get(SETTING_KEYS.id),
-      db.settings.get(SETTING_KEYS.name),
-      db.settings.get(SETTING_KEYS.url),
-      db.settings.get(SETTING_KEYS.lastSync),
+      db.settings.get(GOOGLE_SETTING_KEYS.id),
+      db.settings.get(GOOGLE_SETTING_KEYS.name),
+      db.settings.get(GOOGLE_SETTING_KEYS.url),
+      db.settings.get(GOOGLE_SETTING_KEYS.lastSync),
     ])
     return {
       id: typeof id?.value === 'string' ? id.value : '',
@@ -37,7 +29,7 @@ export function GoogleSyncSettings({ onMessage }: Props) {
   }, [])
 
   async function authorize() {
-    const session = sessionRef.current
+    const session = googleDriveSession()
     if (!session) throw new Error('Google connection needs the deployment configuration described in the setup guide.')
     await session.authorize(import.meta.env.VITE_GOOGLE_LOGIN_HINT?.trim())
     setConnected(true)
@@ -52,11 +44,12 @@ export function GoogleSyncSettings({ onMessage }: Props) {
       const probe = await session.provider(selected.id).probe()
       if (!probe.available) throw new Error(probe.message)
       await db.settings.bulkPut([
-        { key: SETTING_KEYS.id, value: selected.id },
-        { key: SETTING_KEYS.name, value: selected.name },
-        { key: SETTING_KEYS.url, value: selected.url },
+        { key: GOOGLE_SETTING_KEYS.id, value: selected.id },
+        { key: GOOGLE_SETTING_KEYS.name, value: selected.name },
+        { key: GOOGLE_SETTING_KEYS.url, value: selected.url },
       ])
-      onMessage(`${probe.message} New local edits can now be synchronized.`)
+      const result = await syncSelectedGoogleSheet()
+      onMessage(`${probe.message} ${result?.message ?? 'New edits will sync automatically while this app session remains connected.'}`)
     } catch (error) {
       onMessage(error instanceof Error ? error.message : 'Could not connect Google Sheets.')
     } finally {
@@ -69,15 +62,9 @@ export function GoogleSyncSettings({ onMessage }: Props) {
     if (!navigator.onLine) return onMessage('You are offline. Your entries remain queued on this device.')
     setBusy(true)
     try {
-      const session = connected && sessionRef.current?.connected ? sessionRef.current : await authorize()
-      const provider = session.provider(settings.id)
-      const probe = await provider.probe()
-      if (!probe.available) throw new Error(probe.message)
-      const result = await syncPending(db, provider)
-      if (result.synced > 0 && result.errors === 0 && result.conflicts === 0) {
-        await db.settings.put({ key: SETTING_KEYS.lastSync, value: new Date().toISOString() })
-      }
-      onMessage(result.message)
+      const result = await syncSelectedGoogleSheet({ authorize: true })
+      setConnected(Boolean(googleDriveSession()?.connected))
+      onMessage(result?.message ?? 'No Google Sheet is selected yet.')
     } catch (error) {
       onMessage(`${error instanceof Error ? error.message : 'Google Sheets sync failed.'} Your entries remain saved locally.`)
     } finally {
@@ -86,7 +73,7 @@ export function GoogleSyncSettings({ onMessage }: Props) {
   }
 
   function disconnect() {
-    sessionRef.current?.disconnect()
+    disconnectGoogleDrive()
     setConnected(false)
     onMessage('Google access disconnected. The selected sheet is still remembered on this device.')
   }
@@ -103,7 +90,7 @@ export function GoogleSyncSettings({ onMessage }: Props) {
           <h2>Google Sheets sync</h2>
           <p>
             {settings?.id
-              ? <>Selected: <strong>{settings.name || 'Rehab Response Tracker'}</strong>. Last successful sync: {lastSyncLabel}.</>
+              ? <>Selected: <strong>{settings.name || 'Rehab Response Tracker'}</strong>. Last successful sync: {lastSyncLabel}. New saves sync automatically while Google remains connected.</>
               : 'Connect your Google account and select the private Rehab Response Tracker sheet. Only that selected file is available to the app.'}
           </p>
           {!config && <p className="setup-warning">Deployment configuration is still required before Google sign-in can open.</p>}
