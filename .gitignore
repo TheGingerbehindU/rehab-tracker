@@ -24,3 +24,12 @@ work
 *.njsproj
 *.sln
 *.sw?
+
+# Android
+android/.gradle
+android/.kotlin
+android/**/build
+android/local.properties
+*.jks
+*.keystore
+*.p12
