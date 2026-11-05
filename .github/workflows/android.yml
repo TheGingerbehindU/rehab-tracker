@@ -43,7 +43,8 @@ jobs:
         run: gradle --no-daemon testDebugUnitTest assembleRelease
       - name: Check the APK uses the expected signing key
         run: |
-          "$ANDROID_HOME"/build-tools/*/apksigner verify --print-certs android/app/build/outputs/apk/release/app-release.apk | tee certs.txt
+          apksigner=$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -1)apksigner
+          "$apksigner" verify --print-certs android/app/build/outputs/apk/release/app-release.apk | tee certs.txt
           grep -qi "be10f801cf97369f0de59712a250e9e43d382e2b26d2ca145ca55746b00864fa" certs.txt
       - run: mv android/app/build/outputs/apk/release/app-release.apk "$APK_NAME"
       - uses: actions/upload-artifact@v7
