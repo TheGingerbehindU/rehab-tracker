@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import Dexie from 'dexie'
 import { blankRehabDay, latestSessionTime, RehabDatabase, saveRehabDay } from './db'
+import { sessionTimeValue } from './lib/dates'
 
 describe('local upsert and outbox', () => {
   const databases: RehabDatabase[] = []
@@ -47,6 +48,26 @@ describe('local upsert and outbox', () => {
     await saveRehabDay({ ...blankRehabDay('2026-11-02', new Date(), 'symptom_event'), sessionContent: 'Dinner' }, database)
 
     expect(await latestSessionTime(database)).toBe('16:30')
+  })
+
+  it('defaults a new session today to the current time, rounded to 30 minutes', () => {
+    const now = new Date('2026-11-05T19:02:00.000Z')
+    const today = blankRehabDay('2026-11-05', now, 'session', '06:00')
+    const otherDay = blankRehabDay('2026-11-04', now, 'session', '06:00')
+
+    expect(sessionTimeValue(today.sessionAt)).toBe('20:00')
+    expect(sessionTimeValue(otherDay.sessionAt)).toBe('06:00')
+  })
+
+  it('keeps the fingerprint written by sync when saving an older draft', async () => {
+    const database = new RehabDatabase(`test-${crypto.randomUUID()}`)
+    databases.push(database)
+    const draft = await saveRehabDay({ ...blankRehabDay('2026-11-01'), sessionContent: 'First' }, database)
+    await database.days.update(draft.id, { remoteFingerprint: 'from-sync' })
+
+    const saved = await saveRehabDay({ ...draft, sessionContent: 'Edited' }, database)
+
+    expect(saved.remoteFingerprint).toBe('from-sync')
   })
 
   it('upgrades the original date-keyed sync queue without losing records', async () => {

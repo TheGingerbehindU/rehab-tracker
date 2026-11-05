@@ -115,6 +115,20 @@ function HomeView({ days, openEditor }: { days: RehabDay[]; openEditor: (state: 
 
   return (
     <main className="page-shell home-page" id="top">
+      {pendingFollowUps.length > 0 && (
+        <section className="follow-up-card" aria-label="Due follow-ups">
+          <div className="follow-up-heading"><div className="follow-up-icon"><span>24h</span></div><div><p className="context-label">{pendingFollowUps.length === 1 ? 'Follow-up due now' : `${pendingFollowUps.length} follow-ups due now`}</p><h2>Check how each session settled.</h2></div></div>
+          <div className="follow-up-list">
+            {pendingFollowUps.map((followUp) => (
+              <div className="follow-up-row" key={followUp.id}>
+                <div><strong>{followUp.sessionType}</strong><span>{displayDate(followUp.date)} at {displayTime(followUp.sessionAt)}</span></div>
+                <button className="secondary-button" type="button" onClick={() => openEditor({ date: followUp.date, recordId: followUp.id, entryType: 'session', followUp: true })}>Check in <ArrowRight size={18} aria-hidden="true" /></button>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
       <section className="today-hero">
         <div className="today-date">
           <p>{displayDate(today, { weekday: 'long' })}</p>
@@ -133,20 +147,6 @@ function HomeView({ days, openEditor }: { days: RehabDay[]; openEditor: (state: 
         </div>
         {todayTone && <div className="today-summary"><StatusPill day={todayTone} /><dl><div><dt>Sessions</dt><dd>{todaySessions.length}</dd></div><div><dt>Symptom events</dt><dd>{todayEvents.length}</dd></div><div><dt>Training time</dt><dd>{totalDuration || '—'}{totalDuration > 0 && ' min'}</dd></div></dl></div>}
       </section>
-
-      {pendingFollowUps.length > 0 && (
-        <section className="follow-up-card" aria-label="Due follow-ups">
-          <div className="follow-up-heading"><div className="follow-up-icon"><span>24h</span></div><div><p className="context-label">{pendingFollowUps.length === 1 ? 'Follow-up due now' : `${pendingFollowUps.length} follow-ups due now`}</p><h2>Check how each session settled.</h2></div></div>
-          <div className="follow-up-list">
-            {pendingFollowUps.map((followUp) => (
-              <div className="follow-up-row" key={followUp.id}>
-                <div><strong>{followUp.sessionType}</strong><span>{displayDate(followUp.date)} at {displayTime(followUp.sessionAt)}</span></div>
-                <button className="secondary-button" type="button" onClick={() => openEditor({ date: followUp.date, recordId: followUp.id, entryType: 'session', followUp: true })}>Check in <ArrowRight size={18} aria-hidden="true" /></button>
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
 
       <section className="section-block recent-block">
         <div className="block-title"><div><p className="context-label">Recent entries</p><h2>Your body timeline</h2></div></div>
@@ -327,7 +327,7 @@ function App() {
   }
 
   if (editor) {
-    return <DayEditor date={editor.date} recordId={editor.recordId} entryType={editor.entryType} focusFollowUp={editor.followUp} onBack={() => setEditor(editor.recordId ? { date: editor.date, overview: true } : null)} onSaved={(record) => {
+    return <DayEditor date={editor.date} recordId={editor.recordId} entryType={editor.entryType} focusFollowUp={editor.followUp} onBack={() => setEditor(editor.recordId && !editor.followUp ? { date: editor.date, overview: true } : null)} onSaved={(record) => {
       setEditor((current) => current ? { ...current, date: record.date, recordId: record.id, entryType: record.entryType } : null)
       scheduleAutomaticGoogleSync()
     }} />

@@ -7,7 +7,7 @@ The local application is useful without an account or network. IndexedDB is the 
 ## Data flow
 
 1. The editor keeps a local draft and validates numeric boundaries.
-2. A 650 ms debounce (or **Save now**) calls one transactional local save.
+2. A 650 ms debounce (or **Save now**) calls one transactional local save. Valid unsaved edits are also saved when leaving the editor or when the app is hidden.
 3. The transaction increments the record revision, marks it `pending`, and replaces the entry-ID-keyed sync-outbox item.
 4. UI screens subscribe to Dexie queries and update after the transaction commits.
 5. The sync orchestrator fetches the Google Sheets row first, compares its fingerprint, then calls the provider upsert only when safe.

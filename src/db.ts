@@ -55,9 +55,11 @@ export const db = new RehabDatabase()
 
 export function blankRehabDay(date: string, now = new Date(), entryType: EntryType = 'session', preferredSessionTime = '12:00'): RehabDay {
   const nowIso = now.toISOString()
-  const sessionAt = entryType === 'symptom_event' && date === todayInBerlin(now)
+  const isToday = date === todayInBerlin(now)
+  const sessionTime = isToday ? sessionTimeValue(nowIso) : preferredSessionTime
+  const sessionAt = entryType === 'symptom_event' && isToday
     ? nowIso
-    : sessionTimestamp(date, entryType === 'session' ? nearestHalfHour(preferredSessionTime) : '12:00')
+    : sessionTimestamp(date, entryType === 'session' ? nearestHalfHour(sessionTime) : '12:00')
   return {
     id: crypto.randomUUID(),
     date,
@@ -101,6 +103,8 @@ export async function saveRehabDay(input: RehabDay, database = db): Promise<Reha
     const saved: RehabDay = {
       ...input,
       id: existingById?.id ?? input.id,
+      // Sync owns this value; a draft opened before a sync must not overwrite it.
+      remoteFingerprint: existingById?.remoteFingerprint ?? input.remoteFingerprint,
       sessionAt,
       followUpDueAt: followUpTimestamp(sessionAt),
       updatedAt: new Date().toISOString(),

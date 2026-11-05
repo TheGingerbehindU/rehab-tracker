@@ -3,9 +3,10 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { ArrowLeft, CalendarPlus, Check, Clock3, Save } from 'lucide-react'
 import { blankRehabDay, db, latestSessionTime, saveRehabDay } from '../db'
 import { displayDate, displayDateTime, elapsedHours, followUpTimestamp, HALF_HOUR_TIMES, isDateOnly, sessionTimestamp, sessionTimeValue } from '../lib/dates'
-import { symptomDelta } from '../lib/derived'
+import { symptomDelta, withFollowUpCompletion } from '../lib/derived'
 import { downloadFollowUpReminder } from '../lib/reminders'
-import { parseOptionalNumber, validateDay } from '../lib/validation'
+import { isValidDay, parseOptionalNumber, validateDay } from '../lib/validation'
+import { scheduleAutomaticGoogleSync } from '../sync/googleRuntime'
 import { EVENT_CHANGES, EVENT_CONTEXTS, RESPONSE_TYPES, SESSION_TYPES, type EntryType, type RehabDay } from '../types'
 
 type Props = {
@@ -97,7 +98,7 @@ function EuropeanTimeField({ value, entryType, onChange }: { value: string; entr
       ) : (
         <input type="time" step="60" value={input} onChange={(event) => onChange(event.target.value)} />
       )}
-      <small className="field-hint">{entryType === 'symptom_event' ? 'Use the time you noticed the change.' : '30-minute intervals · defaults to your last training start time.'}</small>
+      <small className="field-hint">{entryType === 'symptom_event' ? 'Use the time you noticed the change.' : '30-minute intervals · defaults to now for today, or your last training time for other dates.'}</small>
     </label>
   )
 }
@@ -110,10 +111,19 @@ export function DayEditor({ date, recordId, entryType = 'session', focusFollowUp
   const [saveMessage, setSaveMessage] = useState('Not saved yet')
   const [currentTime, setCurrentTime] = useState(() => Date.now())
   const dirty = useRef(false)
+  const draftRef = useRef(draft)
+  const unmounted = useRef(false)
   const followUpRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
+    draftRef.current = draft
+  }, [draft])
+
+  useEffect(() => {
     if (recordId && stored === undefined) return
+    // Unsaved edits win over a database refresh that arrives while typing,
+    // but never stop an existing record from loading into the placeholder draft.
+    if (dirty.current && (!recordId || draftRef.current.id === recordId)) return
     if (!recordId && entryType === 'session' && preferredSessionTime === undefined) return
     dirty.current = false
     setDraft(stored ?? blankRehabDay(date, new Date(), entryType, preferredSessionTime ?? '12:00'))
@@ -139,7 +149,10 @@ export function DayEditor({ date, recordId, entryType = 'session', focusFollowUp
     dirty.current = true
     setSaveState('saving')
     setSaveMessage('Saving…')
-    setDraft((current) => ({ ...current, [key]: value }))
+    setDraft((current) => {
+      const next = { ...current, [key]: value }
+      return key === 'symptoms24h' || key === 'response24h' ? withFollowUpCompletion(next) : next
+    })
   }
 
   function updateDate(value: string) {
@@ -164,11 +177,14 @@ export function DayEditor({ date, recordId, entryType = 'session', focusFollowUp
       setSaveState('saving')
       setSaveMessage('Saving…')
       const saved = await saveRehabDay(current)
-      dirty.current = false
-      setDraft(saved)
-      setSaveState('saved')
-      setSaveMessage('Saved locally · Waiting to sync')
-      onSaved(saved)
+      // If newer edits arrived during this save, keep them; their own save is already scheduled.
+      if (draftRef.current === current) {
+        dirty.current = false
+        setDraft(saved)
+        setSaveState('saved')
+        setSaveMessage('Saved locally · Waiting to sync')
+      }
+      if (!unmounted.current) onSaved(saved)
     } catch (error) {
       setSaveState('error')
       setSaveMessage(error instanceof Error ? error.message : 'Could not save this entry')
@@ -177,20 +193,43 @@ export function DayEditor({ date, recordId, entryType = 'session', focusFollowUp
 
   useEffect(() => {
     if (!dirty.current) return
-    const timer = window.setTimeout(() => void persist(draft), 650)
+    const timer = window.setTimeout(() => {
+      if (dirty.current) void persist(draft)
+    }, 650)
     return () => window.clearTimeout(timer)
     // Persist is intentionally driven by the latest draft snapshot.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draft])
 
-  function completeFollowUp(complete: boolean) {
-    dirty.current = true
-    setDraft((current) => ({
-      ...current,
-      followUpComplete: complete,
-      followUpRecordedAt: complete ? current.followUpRecordedAt ?? new Date().toISOString() : null,
-    }))
-  }
+  // Save straight away if the app is hidden or closed, such as by the Android back gesture.
+  useEffect(() => {
+    function saveNow() {
+      if (dirty.current) void persist(draftRef.current)
+    }
+    function saveIfHidden() {
+      if (document.visibilityState === 'hidden') saveNow()
+    }
+    document.addEventListener('visibilitychange', saveIfHidden)
+    window.addEventListener('pagehide', saveNow)
+    return () => {
+      document.removeEventListener('visibilitychange', saveIfHidden)
+      window.removeEventListener('pagehide', saveNow)
+    }
+    // Persist only reads refs and state setters for this path.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Save any remaining edits when leaving the editor.
+  useEffect(() => {
+    unmounted.current = false
+    return () => {
+      unmounted.current = true
+      if (!dirty.current || !isValidDay(draftRef.current)) return
+      saveRehabDay(draftRef.current)
+        .then(() => scheduleAutomaticGoogleSync())
+        .catch((error: unknown) => console.error('Could not save this entry on exit', error))
+    }
+  }, [])
 
   return (
     <main className="editor-page page-shell">
@@ -291,10 +330,12 @@ export function DayEditor({ date, recordId, entryType = 'session', focusFollowUp
                   ))}
                 </div>
               </fieldset>
-              <label className="check-row">
-                <input type="checkbox" checked={draft.followUpComplete} onChange={(event) => completeFollowUp(event.target.checked)} />
-                <span><strong>Mark follow-up complete</strong><small>{hours === null ? 'The actual check-in time will be recorded.' : `Recorded ${hours} hours after this session.`}</small></span>
-              </label>
+              <div className={`follow-up-status ${draft.followUpComplete ? 'is-complete' : ''}`} role="status">
+                {draft.followUpComplete ? <Check aria-hidden="true" /> : <Clock3 aria-hidden="true" />}
+                {draft.followUpComplete
+                  ? <span><strong>Check-in complete</strong><small>{hours === null ? 'Saved with this session.' : `Recorded ${hours} hours after this session.`}</small></span>
+                  : <span><strong>Add a score and a response to finish</strong><small>The check-in time is recorded once both are filled in.</small></span>}
+              </div>
               <label className="field">
                 <span>Next-day decision or adjustment</span>
                 <input value={draft.nextDayPlan} placeholder="Continue, reduce, rest or change the plan" onChange={(event) => update('nextDayPlan', event.target.value)} />

@@ -5,6 +5,21 @@ export function symptomDelta(day: Pick<RehabDay, 'symptomsBefore' | 'symptoms24h
   return day.symptoms24h - day.symptomsBefore
 }
 
+/**
+ * A check-in completes once it has both a score and a response. An already
+ * completed check-in stays complete, with its original time, while either value remains.
+ */
+export function withFollowUpCompletion(day: RehabDay, now = new Date()): RehabDay {
+  const hasBoth = day.symptoms24h !== null && day.response24h !== null
+  const hasEither = day.symptoms24h !== null || day.response24h !== null
+  const complete = hasBoth || (day.followUpComplete && hasEither)
+  return {
+    ...day,
+    followUpComplete: complete,
+    followUpRecordedAt: complete ? day.followUpRecordedAt ?? now.toISOString() : null,
+  }
+}
+
 export function hasSession(day: RehabDay): boolean {
   if (day.entryType === 'symptom_event') return false
   return hasEntry(day)
