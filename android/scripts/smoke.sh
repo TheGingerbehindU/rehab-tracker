@@ -10,14 +10,37 @@ mkdir -p "$out"
 
 shot() { adb exec-out screencap -p > "$out/$1.png"; }
 
+tap_bounds() {
+  local left top right bottom
+  read -r left top right bottom <<< "$(echo "$1" | sed -E 's/\[([0-9]+),([0-9]+)\]\[([0-9]+),([0-9]+)\]/\1 \2 \3 \4/')"
+  adb shell input tap $(( (left + right) / 2 )) $(( (top + bottom) / 2 ))
+}
+
+# A slow emulator can show a "isn't responding" popup for its own system apps,
+# which covers the screen. A crash in this app still fails the run further down.
 dump_ui() {
-  adb shell uiautomator dump /sdcard/ui.xml > /dev/null
-  adb shell cat /sdcard/ui.xml > "$out/ui.xml"
+  local attempt wait_bounds
+  for attempt in 1 2 3 4 5; do
+    adb shell uiautomator dump /sdcard/ui.xml > /dev/null
+    adb shell cat /sdcard/ui.xml > "$out/ui.xml"
+    if ! grep -q "responding" "$out/ui.xml"; then
+      return 0
+    fi
+    if grep -q "$package" "$out/ui.xml" && ! grep -q 'package="android"' "$out/ui.xml"; then
+      return 0
+    fi
+    echo "Dismissing a system \"not responding\" popup"
+    wait_bounds=$(grep -o 'text="Wait"[^>]*bounds="[^"]*"' "$out/ui.xml" | sed -E 's/.*bounds="([^"]*)".*/\1/' || true)
+    if [ -n "$wait_bounds" ]; then
+      tap_bounds "$wait_bounds"
+    fi
+    sleep 5
+  done
 }
 
 # Taps the nth element showing exactly this text.
 tap_text() {
-  local text="$1" nth="${2:-1}" bounds left top right bottom
+  local text="$1" nth="${2:-1}" bounds
   dump_ui
   bounds=$(grep -o "text=\"$text\"[^>]*bounds=\"[^\"]*\"" "$out/ui.xml" | sed -n "${nth}p" | sed -E 's/.*bounds="([^"]*)".*/\1/' || true)
   if [ -z "$bounds" ]; then
@@ -25,8 +48,7 @@ tap_text() {
     shot "failed-to-find"
     exit 1
   fi
-  read -r left top right bottom <<< "$(echo "$bounds" | sed -E 's/\[([0-9]+),([0-9]+)\]\[([0-9]+),([0-9]+)\]/\1 \2 \3 \4/')"
-  adb shell input tap $(( (left + right) / 2 )) $(( (top + bottom) / 2 ))
+  tap_bounds "$bounds"
   sleep 2
 }
 
