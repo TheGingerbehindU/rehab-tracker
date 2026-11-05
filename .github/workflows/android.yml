@@ -40,7 +40,7 @@ jobs:
         working-directory: android
         env:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-        run: gradle --no-daemon testReleaseUnitTest assembleRelease
+        run: gradle --no-daemon testDebugUnitTest assembleRelease
       - name: Check the APK uses the expected signing key
         run: |
           "$ANDROID_HOME"/build-tools/*/apksigner verify --print-certs android/app/build/outputs/apk/release/app-release.apk | tee certs.txt
