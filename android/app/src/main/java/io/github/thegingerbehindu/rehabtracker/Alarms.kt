@@ -73,6 +73,9 @@ object Alarms {
                 .setContentTitle("Rehab Tracker test")
                 .setContentText("Tap to confirm this opens the check-in.")
                 .setContentIntent(open)
+                .setCategory(Notification.CATEGORY_REMINDER)
+                // Shown in full on the lock screen, so this text must never contain health details.
+                .setVisibility(Notification.VISIBILITY_PUBLIC)
                 .setAutoCancel(true)
                 .build(),
         )
