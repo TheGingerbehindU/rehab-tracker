@@ -73,6 +73,7 @@ jobs:
           api-level: 34
           target: google_apis
           arch: x86_64
+          profile: pixel_6
           disable-animations: true
           script: bash android/scripts/smoke.sh "$APK_NAME" smoke-output
       - uses: actions/upload-artifact@v7
@@ -97,5 +98,5 @@ jobs:
           gh release create "android-${{ github.run_number }}" "$APK_NAME" \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
-            --title "Android test build ${{ github.run_number }}" \
-            --notes "Setup test build. It doesn't store any entries, so keep logging in the web app."
+            --title "Android preview build ${{ github.run_number }}" \
+            --notes "Preview build. Keep logging in the web app until the move to this app is finished."

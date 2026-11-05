@@ -44,7 +44,7 @@ object Alarms {
     /** Alarms are wiped by a reboot, so the pending one is set again from storage. */
     fun restoreAfterBoot(context: Context) {
         val dueAt = dueAt(context)
-        Diagnostics.log(context, "Phone restarted; pending alarm: ${dueAt > 0}")
+        Diagnostics.log(context, "Phone restarted or app updated; pending test alarm: ${dueAt > 0}")
         if (dueAt > 0) set(context, maxOf(dueAt, System.currentTimeMillis() + 1_000))
     }
 
@@ -102,8 +102,11 @@ class AlarmReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) = Alarms.onFired(context)
 }
 
+/** Restarting the phone or updating the app clears alarms. Starting the app sets the check-in alarm again. */
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        if (intent.action == Intent.ACTION_BOOT_COMPLETED) Alarms.restoreAfterBoot(context)
+        if (intent.action == Intent.ACTION_BOOT_COMPLETED || intent.action == Intent.ACTION_MY_PACKAGE_REPLACED) {
+            Alarms.restoreAfterBoot(context)
+        }
     }
 }
