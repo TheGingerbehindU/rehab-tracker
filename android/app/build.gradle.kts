@@ -8,7 +8,7 @@ val keystorePath: String? = System.getenv("ANDROID_KEYSTORE_PATH")
 
 android {
     namespace = "io.github.thegingerbehindu.rehabtracker"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "io.github.thegingerbehindu.rehabtracker"
