@@ -62,7 +62,9 @@ fun dueCheckIn(inputs: CheckInInputs): DueCheckIn? = with(inputs) {
         return DueCheckIn(CheckInKind.AFTER_24H, afterSession)
     }
     val morning = morningOn(now.atZone(zone).toLocalDate())
-    if (morning <= now && !answeredSince(morning) && (morningOnRestDays || hasUncoveredSession)) {
+    // A session logged after this morning's time would be scored too soon, so it waits for tomorrow.
+    val sessionSinceMorning = latestSessionAt != null && latestSessionAt > morning
+    if (morning <= now && !answeredSince(morning) && !sessionSinceMorning && (morningOnRestDays || hasUncoveredSession)) {
         return DueCheckIn(CheckInKind.MORNING, morning)
     }
     return null

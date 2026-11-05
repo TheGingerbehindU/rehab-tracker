@@ -102,6 +102,26 @@ class CheckInRulesTest {
     }
 
     @Test
+    fun `the first session ever logged doesn't immediately ask for a check-in`() {
+        assertNull(dueCheckIn(inputs(now = at(10, 23, 38), latestSession = at(10, 23, 38))))
+    }
+
+    @Test
+    fun `an unanswered morning check-in lapses once a newer session is logged`() {
+        val before = inputs(now = at(11, 17), latestSession = at(10, 18), lastCheckIn = at(10, 8))
+        assertEquals(CheckInKind.MORNING, dueCheckIn(before)?.kind)
+
+        val after = before.copy(now = at(11, 19), latestSessionAt = at(11, 18))
+        assertNull(dueCheckIn(after))
+    }
+
+    @Test
+    fun `that session is asked about the next morning`() {
+        val due = dueCheckIn(inputs(now = at(12, 8), latestSession = at(11, 18), lastCheckIn = at(10, 8)))
+        assertEquals(CheckInKind.MORNING, due?.kind)
+    }
+
+    @Test
     fun `an entry added late is still covered by the next check-in`() {
         val lateEntry = session("late", at(8, 10))
         val covered = session("covered", at(9, 10))

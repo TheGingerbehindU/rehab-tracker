@@ -196,7 +196,7 @@ fun AppRoot(dao: RehabDao, resumeCount: Int, openCheckInToken: Int, setupTests: 
                         sessions = sessions,
                         coveredIds = coveredIds,
                         checkIns = checkIns,
-                        hasOtherEntries = symptoms.isNotEmpty() || events.isNotEmpty(),
+                        hasOtherEntries = events.isNotEmpty(),
                         refreshKey = resumeCount,
                         navigate = { route = it },
                         openEntry = ::openEntry,

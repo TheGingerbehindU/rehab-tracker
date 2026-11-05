@@ -49,7 +49,7 @@ object CheckInAlarms {
             sessions = dao.sessions(),
             coveredIds = dao.coveredSessionIds(),
             checkIns = dao.checkIns(),
-            hasOtherEntries = dao.symptomCount() > 0 || dao.eventCount() > 0,
+            hasOtherEntries = dao.eventCount() > 0,
         )
     }
 
